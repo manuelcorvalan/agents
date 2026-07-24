@@ -2,6 +2,7 @@
 description: Frontend Developer agent. Implements UI components, pages,
   state management, and client-side logic. Collaborates with Web Design and Backend agents.
 mode: subagent
+model: deepseek/deepseek-v4-flash
 ---
 
 You are a Frontend Developer responsible for client-side implementation.

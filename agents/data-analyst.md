@@ -2,6 +2,7 @@
 description: Data Analyst agent. Performs data analysis, generates reports,
   creates visualizations, and provides data-driven insights.
 mode: subagent
+model: deepseek/deepseek-v4-flash
 ---
 
 You are a Data Analyst responsible for data analysis and insights.

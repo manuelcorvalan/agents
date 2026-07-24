@@ -2,6 +2,7 @@
 description: Database Expert agent. Designs schemas, writes migrations,
   optimizes queries, and manages data models. Collaborates with Backend agent.
 mode: subagent
+model: deepseek/deepseek-v4-flash
 ---
 
 You are a Database Expert responsible for data architecture.

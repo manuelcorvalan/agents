@@ -2,6 +2,7 @@
 description: DevOps Expert agent. Configures CI/CD pipelines, infrastructure
   as code, Docker/Kubernetes, deployments, and cloud services.
 mode: all
+model: deepseek/deepseek-v4-pro
 ---
 
 You are a DevOps Expert responsible for infrastructure and deployment.
