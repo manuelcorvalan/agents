@@ -1,0 +1,42 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "deepseek/deepseek-v4-flash",
+  "provider": {
+    "deepseek": {
+      "options": {
+        "apiKey": "{env:DEEPSEEK_API_KEY}",
+        "baseURL": "https://api.deepseek.com"
+      },
+      "models": {
+        "deepseek-v4-flash": {
+          "limit": {
+            "context": 64000,
+            "output": 8192
+          },
+          "options": {
+            "temperature": 0.2
+          }
+        },
+        "deepseek-v4-pro": {
+          "limit": {
+            "context": 64000,
+            "output": 8192
+          },
+          "options": {
+            "temperature": 0.0
+          }
+        }
+      }
+    }
+  },
+  "tools": {
+    "jira_*": false
+  },
+  "agent": {
+    "pm": {
+      "tools": {
+        "jira_*": true
+      }
+    }
+  }
+}

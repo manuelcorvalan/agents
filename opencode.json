@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "mcp": {
+    "jira": {
+      "type": "local",
+      "command": ["npx", "-y", "@nexus2520/jira-mcp-server"],
+      "enabled": true,
+      "environment": {
+        "JIRA_EMAIL": "{env:JIRA_EMAIL}",
+        "JIRA_API_TOKEN": "{env:JIRA_API_TOKEN}",
+        "JIRA_BASE_URL": "{env:JIRA_BASE_URL}"
+      }
+    }
+  }
+}

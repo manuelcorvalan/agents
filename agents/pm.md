@@ -46,3 +46,9 @@ Cuando el usuario te hable directamente (vía `/pm` o chat directo):
 - When agents need to collaborate, delegate to one agent and instruct them to involve the others via `task()`
 - Always present results to the user in a clear, organized manner
 - Keep the user informed of progress at key milestones
+
+## Integración con Jira
+- Usa `jira_issues` con `action=create` para crear tickets del backlog aprobado
+- Usa `jira_search` con `action=issues` y JQL para consultar tickets existentes
+- Usa `jira_workflow` para mover tickets entre estados (to-do → in-progress → done)
+- Antes de crear un ticket, ejecuta `jira_search` con `action=create_metadata` para descubrir los campos requeridos del proyecto
