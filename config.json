@@ -29,9 +29,7 @@
       }
     }
   },
-  "tools": {
-    "jira_*": false
-  },
+  "tools": {},
   "agent": {
     "pm": {
       "tools": {
