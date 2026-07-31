@@ -2,12 +2,16 @@
 
 Equipo de 9 agentes AI especializados (PM, PO, Backend, Frontend, Database, QA, Web Design, Data Analyst, DevOps) que funciona **seamlessly** en [OpenCode](https://opencode.ai) y [Claude Code](https://claude.ai/code). Mismo repo, mismos agentes, dos plataformas.
 
+En OpenCode podés elegir el motor de modelos: **[DeepSeek](#opción-a--deepseek)** (API por token) o **[Claude Code](#opción-b--claude-code-plugin)** (tu suscripción `claude login` vía plugin). En Claude Code los modelos los gestiona la propia herramienta.
+
 ## Requisitos
 
 ### Para OpenCode
 
 - [OpenCode](https://opencode.ai) instalado (`npm i -g opencode-ai` o `brew install anomalyco/tap/opencode`)
-- API key de [DeepSeek](https://platform.deepseek.com)
+- **Motor de modelos — elegí uno:**
+  - **DeepSeek**: API key de [DeepSeek](https://platform.deepseek.com)
+  - **Claude Code**: CLI de [Claude Code](https://claude.ai/code) instalado y autenticado (`npm i -g @anthropic-ai/claude-code` + `claude login`) — sin API key, usa tu suscripción
 - [RTK](https://github.com/rtk-ai/rtk) — comprime output de comandos bash (~60-90% menos tokens)
 - [CodeGraph](https://github.com/colbymchenry/codegraph) — índice de código local para agentes técnicos
 - [direnv](https://direnv.net) (recomendado para cargar variables de entorno automáticamente)
@@ -112,11 +116,27 @@ JIRA_BASE_URL=https://tu-espacio.atlassian.net
 set -a && source .env && set +a && opencode
 ```
 
+## Elegir motor de modelos en OpenCode
+
+OpenCode soporta ambos motores en paralelo. Elegís el que prefieras para cada agente — podés incluso mezclarlos (p. ej. PM en Claude Code, técnicos en DeepSeek).
+
+| | DeepSeek | Claude Code (plugin) |
+|---|---|---|
+| Config | provider `deepseek` en `~/.config/opencode/config.json` | `"plugin": ["@khalilgharbaoui/opencode-claude-code-plugin"]` |
+| Credencial | `DEEPSEEK_API_KEY` en `.env` | ninguna — usa tu `claude login` (Pro/Max, Bedrock, Vertex o API key) |
+| Costo | por token (API) | flat-rate de tu suscripción |
+| Modelos | `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-pro` | `claude-code/haiku`, `claude-code/sonnet`, `claude-code/opus` (+ variantes reasoning) |
+| Ajuste de agentes | `model: deepseek/...` en `agents/*.md` | `model: claude-code/sonnet` en `agents/*.md` |
+
+> **DeepSeek** es el más económico por token. **Claude Code** da acceso a los modelos Claude sin pagar API, usando tu suscripción. El plugin delega al CLI `claude` como subproceso, por lo que mantiene el sistema de agentes, permisos y MCP de OpenCode.
+
 ## Configuración
 
 ### OpenCode
 
-#### Global (`~/.config/opencode/config.json`)
+#### Opción A — DeepSeek
+
+Global (`~/.config/opencode/config.json`):
 
 ```json
 {
@@ -142,6 +162,44 @@ set -a && source .env && set +a && opencode
   }
 }
 ```
+
+#### Opción B — Claude Code (plugin)
+
+El plugin [`@khalilgharbaoui/opencode-claude-code-plugin`](https://www.npmjs.com/package/@khalilgharbaoui/opencode-claude-code-plugin) spawns el CLI `claude` como subproceso y registra el provider `claude-code` en OpenCode: agentes, permisos y MCP quedan en OpenCode; la autenticación y facturación usan tu `claude login`.
+
+Config mínima — agregar a `opencode.json` (proyecto) o `~/.config/opencode/opencode.json` (global):
+
+```json
+{
+  "plugin": ["@khalilgharbaoui/opencode-claude-code-plugin"]
+}
+```
+
+Luego reiniciar OpenCode y seleccionar un modelo `claude-code/*` con `/models`.
+
+Overrides opcionales (en `provider.claude-code`):
+
+```json
+{
+  "plugin": ["@khalilgharbaoui/opencode-claude-code-plugin"],
+  "provider": {
+    "claude-code": {
+      "options": {
+        "cliPath": "claude",
+        "proxyTools": ["Bash", "Edit", "Write", "WebFetch"],
+        "bridgeOpencodeMcp": true
+      }
+    }
+  }
+}
+```
+
+- `cliPath` — ruta al binario `claude` (por defecto `claude` en PATH).
+- `proxyTools` — tools built-in de Claude que se enrutan por el executor + UI de permisos de OpenCode (evita que el CLI las ejecute por afuera de OpenCode).
+- `bridgeOpencodeMcp` — traduce el bloque `mcp` de tu config de OpenCode al CLI de Claude.
+- `accounts` — `["personal", "work"]` expande providers separados por cuenta de Claude.
+
+> **Nota:** para usar el plugin, el CLI de Claude Code debe estar instalado y autenticado: `npm i -g @anthropic-ai/claude-code && claude login`. El plugin **no** requiere `ANTHROPIC_API_KEY`.
 
 #### Proyecto (`opencode.json`)
 
@@ -251,7 +309,7 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend y QA, vía `per
 | **DevOps** | `all` | `deepseek-v4-flash` | CI/CD, infraestructura, Docker/K8s, deploys |
 
 > `all` = usable como agente primario (vos) y como subagente (vía PM).  
-> Los modelos listeados aplican solo a OpenCode. Claude Code usa sus modelos built-in.
+> La columna **Modelo** aplica al modo DeepSeek. Si elegís el [plugin Claude Code](#opción-b--claude-code-plugin), ajustá `model:` en `agents/*.md` a `claude-code/sonnet` (o `claude-code/haiku` para tareas rápidas, `claude-code/opus` para las más complejas). En Claude Code standalone, los modelos los gestiona la propia herramienta.
 
 ## Optimización de tokens
 
@@ -286,8 +344,8 @@ Detalles por herramienta:
 | `.claude/CLAUDE.md` | — | PM workflow + referencias a agentes |
 | `.claude/commands/*.md` | — | Slash commands |
 | `.claude/settings.json` | — | MCP Jira + config |
-| `opencode.json` | MCP Jira + permisos por agente (codegraph) | — |
-| `~/.config/opencode/opencode.json` | Plugin caveman + RTK + MCP CodeGraph + permisos globales (global) | — |
+| `opencode.json` | MCP Jira + permisos por agente (codegraph) + plugin claude-code (opcional) | — |
+| `~/.config/opencode/opencode.json` | Plugin caveman + RTK + MCP CodeGraph + plugin claude-code (opcional) + permisos globales (global) | — |
 | `~/.config/opencode/AGENTS.md` | Base caveman + guía CodeGraph (global) | — |
 | `.env` | Compartido | Compartido |
 
