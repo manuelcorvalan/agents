@@ -16,5 +16,52 @@
         "JIRA_BASE_URL": "${JIRA_BASE_URL}"
       }
     }
+  },
+  "agent": {
+    "pm": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "backend": {
+      "permission": {
+        "codegraph_*": "allow"
+      }
+    },
+    "frontend": {
+      "permission": {
+        "codegraph_*": "allow"
+      }
+    },
+    "qa": {
+      "permission": {
+        "codegraph_*": "allow"
+      }
+    },
+    "po": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "database": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "data-analyst": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "devops": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "web-design": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    }
   }
 }

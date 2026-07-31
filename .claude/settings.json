@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "jira": {
+      "command": "npx",
+      "args": ["-y", "@nexus2520/jira-mcp-server"],
+      "env": {
+        "JIRA_EMAIL": "${JIRA_EMAIL}",
+        "JIRA_API_TOKEN": "${JIRA_API_TOKEN}",
+        "JIRA_BASE_URL": "${JIRA_BASE_URL}"
+      }
+    }
+  }
+}

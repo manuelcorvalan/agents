@@ -1,5 +1,37 @@
-# This repo contains only agent and command definitions
-# No generated files expected
+# =============================================================================
+# opencode-agents — .gitignore  (v2 dual-platform: OpenCode + Claude Code)
+# =============================================================================
+# This repo contains canonical agent/command definitions.
+# Tracked platform config lives in .claude/  — do NOT blanket-exclude it.
+# Only generated files, runtime artifacts, and secrets are ignored below.
+# =============================================================================
 
-# Dotenv
+# --- Secrets & environment ------------------------------------------------
 .env
+
+# --- OpenCode — runtime artifacts (generated at runtime) -------------------
+.opencode/
+
+# --- CodeGraph — index (regenerable via `codegraph init`) ------------------
+.codegraph/
+
+# --- Claude Code — only runtime artifacts (config files are tracked) -------
+.claude/cache/
+.claude/logs/
+.claude/tmp/
+
+# --- Node.js / JavaScript --------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- macOS finder droppings ------------------------------------------------
+.DS_Store
+
+# --- IDE / Editor temp files -----------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
