@@ -257,7 +257,7 @@ Contiene la configuración específica del proyecto: MCP y permisos por agente.
 
 El [servidor MCP de Jira](https://github.com/nexus2520/jira-mcp-server) expone herramientas (`jira_issues`, `jira_search`, `jira_comments`, etc.) que el agente PM puede usar para gestionar el backlog, crear issues, buscar y actualizar tareas sin salir del terminal.
 
-Habilitado para el agente **PM** vía `opencode.json` (OpenCode) y `.claude/settings.json` (Claude Code):
+Habilitado para los agentes **PM** y **Reporting** vía `opencode.json` (OpenCode) y `.claude/settings.json` (Claude Code):
 
 OpenCode:
 ```json
@@ -266,11 +266,16 @@ OpenCode:
     "tools": {
       "jira_*": true
     }
+  },
+  "reporting": {
+    "permission": {
+      "jira_*": "allow"
+    }
   }
 }
 ```
 
-> Los tools de MCP están disponibles por defecto; el grant explícito a PM es opcional. Si se usa, va en `opencode.json` (a nivel proyecto, `config.json` no se lee).
+> Los tools de MCP están disponibles por defecto; el grant explícito a PM/Reporting es opcional. Si se usa, va en `opencode.json` (a nivel proyecto, `config.json` no se lee). Reporting se define como subagente (`mode: subagent`) con los tools `jira_*` habilitados para generar reportes de estado y sprint.
 
 Claude Code: el PM (definido en `.claude/CLAUDE.md`) usa directamente las herramientas MCP expuestas por `settings.json`.
 
@@ -299,6 +304,7 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend y QA, vía `per
 | Agente | Modo | Modelo | Rol |
 |--------|------|--------|-----|
 | **PO** | `all` | `deepseek-v4-flash` | Define producto, pregunta, refina la visión, documenta en PRD.md |
+| **Business** | `all` | `deepseek-v4-pro` | Define el caso de negocio: estrategia, métricas, riesgos, roadmap; documenta en BUSINESS.md |
 | **PM** | `primary` | `deepseek-v4-pro` | Coordina al equipo, genera backlog, documentación, delega tareas |
 | **Backend** | `subagent` | `deepseek-v4-flash` | APIs, lógica de negocio, servidor |
 | **Frontend** | `subagent` | `deepseek-v4-flash` | Componentes, UI, estado, API integration |
@@ -307,6 +313,7 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend y QA, vía `per
 | **QA** | `subagent` | `deepseek-v4-flash` | Diseña e implementa tests (unit, integration, e2e) |
 | **Web Design** | `subagent` | `deepseek-v4-flash` | UX/UI, wireframes, design system, styling |
 | **DevOps** | `all` | `deepseek-v4-flash` | CI/CD, infraestructura, Docker/K8s, deploys |
+| **Reporting** | `subagent` | `deepseek-v4-flash` | Reportes desde Jira: estado, sprint reviews, analytics |
 
 > `all` = usable como agente primario (vos) y como subagente (vía PM).  
 > La columna **Modelo** aplica al modo DeepSeek. Si elegís el [plugin Claude Code](#opción-b--claude-code-plugin), ajustá `model:` en `agents/*.md` a `claude-code/sonnet` (o `claude-code/haiku` para tareas rápidas, `claude-code/opus` para las más complejas). En Claude Code standalone, los modelos los gestiona la propia herramienta.
@@ -332,8 +339,10 @@ Detalles por herramienta:
 | Comando | OpenCode | Claude Code | Descripción |
 |---------|----------|-------------|-------------|
 | `/po` | `commands/po.md` | `.claude/commands/po.md` | Interactúa con el Product Owner para definir la visión del producto |
+| `/business` | `commands/business.md` | — | Define el caso de negocio con el Business Analyst (documenta en BUSINESS.md) |
 | `/pm` | `commands/pm.md` | `.claude/commands/pm.md` | Invoca al PM para coordinar el equipo y ejecutar el proyecto |
 | `/devops` | `commands/devops.md` | `.claude/commands/devops.md` | Da instrucciones directas de deploy e infraestructura |
+| `/report` | `commands/report.md` | — | Genera un reporte de estado/sprint desde Jira |
 
 ## Arquitectura — qué archivo usa cada plataforma
 
@@ -345,7 +354,7 @@ Detalles por herramienta:
 | `.claude/commands/*.md` | — | Slash commands |
 | `.claude/settings.json` | — | MCP Jira + config |
 | `opencode.json` | MCP Jira + permisos por agente (codegraph) + plugin claude-code (opcional) | — |
-| `~/.config/opencode/opencode.json` | Plugin caveman + RTK + MCP CodeGraph + plugin claude-code (opcional) + permisos globales (global) | — |
+| `~/.config/opencode/opencode.json` | Plugin RTK + MCP CodeGraph + plugin claude-code (opcional) + skills caveman + permisos globales (global) | — |
 | `~/.config/opencode/AGENTS.md` | Base caveman + guía CodeGraph (global) | — |
 | `.env` | Compartido | Compartido |
 
@@ -354,6 +363,12 @@ Detalles por herramienta:
 El flujo es **idéntico en ambas plataformas**. La diferencia está en cómo se ejecuta internamente: OpenCode usa agentes definidos por frontmatter YAML; Claude Code usa `CLAUDE.md` como orquestador PM que delega a subagentes built-in.
 
 ```
+FASE 0 — Definir el caso de negocio (opcional):
+  /business Quiero lanzar una app de tareas para freelancers
+
+  → Business te hace preguntas estratégicas (modelo de negocio, mercado, KPIs, riesgos)
+  → Business guarda el caso en BUSINESS.md
+
 FASE 1 — Definir el producto:
   /po Quiero una app de tareas con login y dashboard
 
@@ -396,6 +411,8 @@ opencode-agents/
 ├── agents/                 # Definiciones canónicas de agentes (single source of truth)
 │   ├── pm.md
 │   ├── po.md
+│   ├── business.md
+│   ├── reporting.md
 │   ├── backend.md
 │   ├── frontend.md
 │   ├── database.md
@@ -406,6 +423,8 @@ opencode-agents/
 ├── commands/               # Slash commands para OpenCode
 │   ├── pm.md
 │   ├── po.md
+│   ├── business.md
+│   ├── report.md
 │   └── devops.md
 ├── config.json             # Referencia: provider/modelos/permisos (global ~/.config/opencode/config.json) — no se lee a nivel proyecto
 ├── opencode.json           # MCP Jira + permisos por agente (OpenCode)

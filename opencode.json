@@ -11,9 +11,9 @@
       ],
       "enabled": true,
       "environment": {
-        "JIRA_EMAIL": "${JIRA_EMAIL}",
-        "JIRA_API_TOKEN": "${JIRA_API_TOKEN}",
-        "JIRA_BASE_URL": "${JIRA_BASE_URL}"
+        "JIRA_EMAIL": "{env:JIRA_EMAIL}",
+        "JIRA_API_TOKEN": "{env:JIRA_API_TOKEN}",
+        "JIRA_BASE_URL": "{env:JIRA_BASE_URL}"
       }
     }
   },
@@ -61,6 +61,17 @@
     "web-design": {
       "permission": {
         "codegraph_*": "deny"
+      }
+    },
+    "business": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "reporting": {
+      "permission": {
+        "codegraph_*": "deny",
+        "jira_*": "allow"
       }
     }
   }
