@@ -1,6 +1,6 @@
 # opencode-agents v2 — Dual Platform (OpenCode + Claude Code)
 
-Equipo de 9 agentes AI especializados (PM, PO, Backend, Frontend, Database, QA, Web Design, Data Analyst, DevOps) que funciona **seamlessly** en [OpenCode](https://opencode.ai) y [Claude Code](https://claude.ai/code). Mismo repo, mismos agentes, dos plataformas.
+Equipo de 15 agentes AI especializados (PM, PO, Business, Backend, Frontend, Database, QA, Web Design, Data Analyst, DevOps, Reporting, Architect, Security, Release Manager, Technical Writer) que funciona **seamlessly** en [OpenCode](https://opencode.ai) y [Claude Code](https://claude.ai/code). Mismo repo, mismos agentes, dos plataformas.
 
 En OpenCode podés elegir el motor de modelos: **[DeepSeek](#opción-a--deepseek)** (API por token) o **[Claude Code](#opción-b--claude-code-plugin)** (tu suscripción `claude login` vía plugin). En Claude Code los modelos los gestiona la propia herramienta.
 
@@ -50,7 +50,7 @@ brew install rtk                     # o: cargo install rtk
 rtk init -g --opencode               # plugin para OpenCode (global)
 rtk init -g                          # hook PreToolUse para Claude Code
 
-# CodeGraph — índice de código local para agentes técnicos (backend, frontend, QA)
+# CodeGraph — índice de código local para agentes técnicos (backend, frontend, qa, architect, database, data-analyst, security)
 npm i -g @colbymchenry/codegraph      # o: curl -fsSL .../install.sh | sh
 codegraph install -t opencode,claude -l global -y   # wire MCP en ambas plataformas
 
@@ -81,7 +81,7 @@ cp .env.example .env
 direnv allow .
 ```
 
-> **Importante:** la carpeta `.claude/` debe estar dentro del directorio de trabajo de tu proyecto para que Claude Code la detecte. Los archivos en `agents/` son referenciados por `.claude/CLAUDE.md` — **no se duplican**. El orquestador PM de Claude Code lee las definiciones canónicas directamente desde `agents/`.
+> **Importante:** la carpeta `.claude/` debe estar dentro del directorio de trabajo de tu proyecto para que Claude Code la detecte. Las definiciones canónicas viven en `agents/` (single source of truth); `.claude/agents/` contiene solo **wrappers mínimos** que registran cada subagente y apuntan al archivo canónico (`agents/<rol>.md`) — las definiciones **no se duplican**. El orquestador PM de Claude Code lee las definiciones canónicas directamente desde `agents/`.
 
 > Las herramientas de optimización de tokens (RTK + CodeGraph) se instalan una sola vez, en **ambas plataformas** — ver sección **Herramientas de optimización de tokens** más arriba.
 
@@ -285,14 +285,18 @@ Para regenerar el token de API: [https://id.atlassian.com/manage/api-tokens](htt
 
 El servidor MCP de [CodeGraph](https://github.com/colbymchenry/codegraph) (`codegraph serve --mcp`) expone la herramienta `codegraph_explore`: índice local del código (símbolos, call paths, blast radius) en una sola llamada. Se configura globalmente vía `codegraph install`.
 
-Habilitado **solo** para los agentes técnicos Backend, Frontend y QA, vía `permission` en `opencode.json`:
+Habilitado **solo** para los agentes técnicos Backend, Frontend, QA, Architect, Database, Data Analyst y Security, vía `permission` en `opencode.json`:
 
 ```json
 "agent": {
-  "backend":  { "permission": { "codegraph_*": "allow" } },
-  "frontend": { "permission": { "codegraph_*": "allow" } },
-  "qa":       { "permission": { "codegraph_*": "allow" } },
-  "pm":       { "permission": { "codegraph_*": "deny" } }
+  "backend":      { "permission": { "codegraph_*": "allow" } },
+  "frontend":     { "permission": { "codegraph_*": "allow" } },
+  "qa":           { "permission": { "codegraph_*": "allow" } },
+  "architect":    { "permission": { "codegraph_*": "allow" } },
+  "database":     { "permission": { "codegraph_*": "allow" } },
+  "data-analyst": { "permission": { "codegraph_*": "allow" } },
+  "security":     { "permission": { "codegraph_*": "allow" } },
+  "pm":           { "permission": { "codegraph_*": "deny" } }
 }
 ```
 
@@ -303,7 +307,7 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend y QA, vía `per
 
 | Agente | Modo | Modelo | Rol |
 |--------|------|--------|-----|
-| **PO** | `all` | `deepseek-v4-flash` | Define producto, pregunta, refina la visión, documenta en PRD.md |
+| **PO** | `all` | `deepseek-v4-pro` | Define producto, pregunta, refina la visión, documenta en PRD.md |
 | **Business** | `all` | `deepseek-v4-pro` | Define el caso de negocio: estrategia, métricas, riesgos, roadmap; documenta en BUSINESS.md |
 | **PM** | `primary` | `deepseek-v4-pro` | Coordina al equipo, genera backlog, documentación, delega tareas |
 | **Backend** | `subagent` | `deepseek-v4-flash` | APIs, lógica de negocio, servidor |
@@ -312,8 +316,12 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend y QA, vía `per
 | **Data Analyst** | `subagent` | `deepseek-v4-flash` | Análisis, reportes, visualizaciones, insights |
 | **QA** | `subagent` | `deepseek-v4-flash` | Diseña e implementa tests (unit, integration, e2e) |
 | **Web Design** | `subagent` | `deepseek-v4-flash` | UX/UI, wireframes, design system, styling |
-| **DevOps** | `all` | `deepseek-v4-flash` | CI/CD, infraestructura, Docker/K8s, deploys |
+| **DevOps** | `all` | `deepseek-v4-pro` | CI/CD, infraestructura, Docker/K8s, deploys |
 | **Reporting** | `subagent` | `deepseek-v4-flash` | Reportes desde Jira: estado, sprint reviews, analytics |
+| **Architect** | `subagent` | `deepseek-v4-pro` | Tech Lead/Architect: ADRs, contratos de módulos, decisiones cross-cutting |
+| **Security** | `subagent` | `deepseek-v4-flash` | Threat modeling, secret-scan, dependency audit, gate de seguridad |
+| **Release Manager** | `subagent` | `deepseek-v4-flash` | Versionado semver, changelog, release notes, rollback |
+| **Technical Writer** | `subagent` | `deepseek-v4-flash` | API docs, runbooks, changelog, setup guides |
 
 > `all` = usable como agente primario (vos) y como subagente (vía PM).  
 > La columna **Modelo** aplica al modo DeepSeek. Si elegís el [plugin Claude Code](#opción-b--claude-code-plugin), ajustá `model:` en `agents/*.md` a `claude-code/sonnet` (o `claude-code/haiku` para tareas rápidas, `claude-code/opus` para las más complejas). En Claude Code standalone, los modelos los gestiona la propia herramienta.
@@ -326,23 +334,23 @@ Tres capas reducen el consumo de tokens, cada una dirigida al agente que más le
 |---|---|---|---|
 | **caveman** | PM (comunicación interna) | Texto generado por el agente (backlog, resúmenes, delegación) | ~65% menos output |
 | **RTK** | Todos (global) | Output de comandos bash (`git status`, `grep`, `cat`, tests...) | ~60-90% menos tokens |
-| **CodeGraph** | Backend, Frontend, QA | Tool calls de exploración de código (call paths, blast radius en 1 llamada) | 69% menos tokens, ~60% menos costo |
+| **CodeGraph** | Backend, Frontend, QA, Architect, Database, Data Analyst, Security | Tool calls de exploración de código (call paths, blast radius en 1 llamada) | 69% menos tokens, ~60% menos costo |
 
 Detalles por herramienta:
 
 - **caveman** — el PM usa estilo terse (skill `caveman`) para la comunicación interna agente↔agente: prompts de delegación y resúmenes de subagentes comprimidos. Los reportes al **usuario** se mantienen en español claro y completo. Configurado en `agents/pm.md` y `.claude/CLAUDE.md`.
 - **RTK** — instalado global, reescribe comandos de bash a sus equivalentes comprimidos antes de que el output entre al contexto. No requiere configuración por agente.
-- **CodeGraph** — los agentes técnicos consultan el grafo (`codegraph_explore`) antes de modificar código, evitando loops de grep/read. Configurado en `agents/backend.md`, `agents/frontend.md`, `agents/qa.md`. Permisos restringidos vía `permission.codegraph_*` en `opencode.json` (deny para el resto de agentes).
+- **CodeGraph** — los agentes técnicos consultan el grafo (`codegraph_explore`) antes de modificar código, evitando loops de grep/read. Configurado en `agents/backend.md`, `agents/frontend.md`, `agents/qa.md`, `agents/architect.md`, `agents/database.md`, `agents/data-analyst.md`, `agents/security.md`. Permisos restringidos vía `permission.codegraph_*` en `opencode.json` (deny para el resto de agentes).
 
 ## Comandos
 
 | Comando | OpenCode | Claude Code | Descripción |
 |---------|----------|-------------|-------------|
 | `/po` | `commands/po.md` | `.claude/commands/po.md` | Interactúa con el Product Owner para definir la visión del producto |
-| `/business` | `commands/business.md` | — | Define el caso de negocio con el Business Analyst (documenta en BUSINESS.md) |
+| `/business` | `commands/business.md` | `.claude/commands/business.md` | Define el caso de negocio con el Business Analyst (documenta en BUSINESS.md) |
 | `/pm` | `commands/pm.md` | `.claude/commands/pm.md` | Invoca al PM para coordinar el equipo y ejecutar el proyecto |
 | `/devops` | `commands/devops.md` | `.claude/commands/devops.md` | Da instrucciones directas de deploy e infraestructura |
-| `/report` | `commands/report.md` | — | Genera un reporte de estado/sprint desde Jira |
+| `/report` | `commands/report.md` | `.claude/commands/report.md` | Genera un reporte de estado/sprint desde Jira |
 
 ## Arquitectura — qué archivo usa cada plataforma
 
@@ -351,6 +359,7 @@ Detalles por herramienta:
 | `agents/*.md` | Directo (definiciones de agentes) | Referenciado por `.claude/CLAUDE.md` |
 | `commands/*.md` | Slash commands | — |
 | `.claude/CLAUDE.md` | — | PM workflow + referencias a agentes |
+| `.claude/agents/*.md` | — | Subagent wrappers (Claude Code) |
 | `.claude/commands/*.md` | — | Slash commands |
 | `.claude/settings.json` | — | MCP Jira + config |
 | `opencode.json` | MCP Jira + permisos por agente (codegraph) + plugin claude-code (opcional) | — |
@@ -360,7 +369,7 @@ Detalles por herramienta:
 
 ## Flujo de trabajo recomendado
 
-El flujo es **idéntico en ambas plataformas**. La diferencia está en cómo se ejecuta internamente: OpenCode usa agentes definidos por frontmatter YAML; Claude Code usa `CLAUDE.md` como orquestador PM que delega a subagentes built-in.
+El flujo es **idéntico en ambas plataformas**. La diferencia está en cómo se ejecuta internamente: OpenCode usa agentes definidos por frontmatter YAML en `agents/*.md`; Claude Code usa `CLAUDE.md` como orquestador PM que delega a subagentes registrados vía wrappers mínimos en `.claude/agents/*.md` (cada wrapper apunta a su archivo canónico `agents/<rol>.md`).
 
 ```
 FASE 0 — Definir el caso de negocio (opcional):
@@ -393,6 +402,21 @@ FASE 3 — Deploy (cuando vos decidas):
   → DevOps ejecuta el deploy
 ```
 
+## Software Factory
+
+La software factory integra un pipeline de calidad con **fases y gates** que el PM ejecuta en cada entrega. Fuente de verdad: `STANDARDS.md`.
+
+| Fase | Gate | Owner | Bloquea si |
+|------|------|-------|-----------|
+| Entrada | DoR (AC testables, deps claras, story points, criterios de salida) | PO define / PM valida | Story no entra a desarrollo |
+| Diseño | ADRs + contratos de módulos firmados | Architect | Implementación no arranca |
+| Implementación | Code review (`cavecrew-reviewer`) | cavecrew-reviewer | Findings 🔴 |
+| Verificación | DoD check-list (lint, build, tests, coverage ≥80%, vulns, AC) | QA | Story no es `done` |
+| Pre-release | Security gate (secret-scan, dependency audit, authz/authn) | Security | Release bloqueado |
+| Release | Semver + changelog + release notes + rollback | Release Manager (+ Technical Writer para docs) | Sin gates verdes no hay release |
+
+Referencias: `STANDARDS.md` (DoD/DoR/gates), `templates/` (formatos canónicos), `docs/adr/` (decisiones), `docs/metrics.md` (KPIs), `.github/workflows/ci.yml` (pipeline CI), `bin/factory-init` (inicialización).
+
 ## Estructura del proyecto
 
 ```
@@ -403,11 +427,31 @@ opencode-agents/
 ├── .gitignore
 ├── .claude/                # Claude Code layer (v2)
 │   ├── CLAUDE.md           # PM orquestador para Claude Code
-│   ├── commands/           # Slash commands para Claude Code
+│   ├── agents/             # Wrappers mínimos — registran subagentes (14)
+│   │   ├── po.md
+│   │   ├── business.md
+│   │   ├── backend.md
+│   │   ├── frontend.md
+│   │   ├── database.md
+│   │   ├── data-analyst.md
+│   │   ├── qa.md
+│   │   ├── web-design.md
+│   │   ├── devops.md
+│   │   ├── reporting.md
+│   │   ├── architect.md
+│   │   ├── security.md
+│   │   ├── release-manager.md
+│   │   └── tech-writer.md
+│   ├── commands/           # Slash commands para Claude Code (5)
 │   │   ├── pm.md
 │   │   ├── po.md
+│   │   ├── business.md
+│   │   ├── report.md
 │   │   └── devops.md
 │   └── settings.json       # MCP Jira para Claude Code
+├── .github/
+│   └── workflows/
+│       └── ci.yml          # Pipeline CI (lint + build + tests + secret-scan + audit)
 ├── agents/                 # Definiciones canónicas de agentes (single source of truth)
 │   ├── pm.md
 │   ├── po.md
@@ -419,13 +463,31 @@ opencode-agents/
 │   ├── qa.md
 │   ├── web-design.md
 │   ├── data-analyst.md
-│   └── devops.md
+│   ├── devops.md
+│   ├── architect.md
+│   ├── security.md
+│   ├── release-manager.md
+│   └── tech-writer.md
 ├── commands/               # Slash commands para OpenCode
 │   ├── pm.md
 │   ├── po.md
 │   ├── business.md
 │   ├── report.md
 │   └── devops.md
+├── bin/
+│   └── factory-init        # Inicializa la estructura de la software factory
+├── docs/                   # Documentación de la software factory
+│   ├── adr/                # Architecture Decision Records
+│   ├── kb/                 # Knowledge base
+│   └── metrics.md          # KPIs y métricas
+├── templates/              # Formatos canónicos de artefactos
+│   ├── business-case.md
+│   ├── prd.md
+│   ├── user-story.md
+│   ├── test-plan.md
+│   ├── runbook.md
+│   └── retro.md
+├── STANDARDS.md            # DoD/DoR/convenciones/gates (fuente de verdad de calidad)
 ├── config.json             # Referencia: provider/modelos/permisos (global ~/.config/opencode/config.json) — no se lee a nivel proyecto
 ├── opencode.json           # MCP Jira + permisos por agente (OpenCode)
 ├── .codegraph/             # Índice CodeGraph (generado por `codegraph init`, no versionado)
@@ -440,7 +502,7 @@ opencode-agents/
 3. Si querés un comando, crear archivo en `commands/<nombre>.md` (OpenCode) y/o `.claude/commands/<nombre>.md` (Claude Code) con `agent: <nombre>`
 4. Agregar el nuevo agente al equipo del PM:
    - OpenCode: editar `agents/pm.md`
-   - Claude Code: editar `.claude/CLAUDE.md` (agregar a la tabla de subagentes y al workflow)
+   - Claude Code: crear `.claude/agents/<nombre>.md` (wrapper mínimo: frontmatter `name`/`description`/`tools` + "Read `agents/<nombre>.md` first") y editar `.claude/CLAUDE.md` (agregar a la tabla de subagentes y al workflow)
 5. Reiniciar la herramienta
 
 ## Troubleshooting

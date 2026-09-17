@@ -38,6 +38,11 @@
         "codegraph_*": "allow"
       }
     },
+    "architect": {
+      "permission": {
+        "codegraph_*": "allow"
+      }
+    },
     "po": {
       "permission": {
         "codegraph_*": "deny"
@@ -45,12 +50,12 @@
     },
     "database": {
       "permission": {
-        "codegraph_*": "deny"
+        "codegraph_*": "allow"
       }
     },
     "data-analyst": {
       "permission": {
-        "codegraph_*": "deny"
+        "codegraph_*": "allow"
       }
     },
     "devops": {
@@ -64,6 +69,21 @@
       }
     },
     "business": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "security": {
+      "permission": {
+        "codegraph_*": "allow"
+      }
+    },
+    "tech-writer": {
+      "permission": {
+        "codegraph_*": "deny"
+      }
+    },
+    "release-manager": {
       "permission": {
         "codegraph_*": "deny"
       }

@@ -1,0 +1,132 @@
+# =============================================================================
+# CI/CD pipeline — GitHub Actions (reference template)
+# =============================================================================
+# Generic Node.js template for the opencode-agents software factory.
+# Adapt the `# ADAPT:` markers to your project (runtime, package manager,
+# lint/test commands). The gate jobs (secret-scan + audit) are stack-agnostic.
+#
+# Required checks (block merge): set them in GitHub →
+#   Settings → Branches → Branch protection → "Require status checks"
+#   Enable: lint, test, secret-scan, audit.
+# A PR cannot merge until all four checks are green.
+# =============================================================================
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Least-privilege: read-only by default; write only where required.
+permissions:
+  contents: read
+  # ADAPT: only if the job pushes artifacts/tags (e.g. release job).
+  # contents: write
+
+# Prevent redundant concurrent runs on the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint — block if the formatter/linter is dirty.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ADAPT: replace with your runtime (e.g. actions/setup-python, -go, -java).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ADAPT: replace with your linter (ruff check ., golangci-lint run, ...).
+      - name: Run lint
+        run: npm run lint
+
+  # ---------------------------------------------------------------------------
+  # Test — block if any test fails (unit + integration; add e2e if present).
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ADAPT: your test runner (pytest, go test ./..., cargo test, ...).
+      - name: Run tests
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # Secret-scan — gitleaks. Blocks on ANY leaked credential/token/API key.
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan full history, not just HEAD
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # only for org/enterprise
+
+  # ---------------------------------------------------------------------------
+  # Dependency audit — blocks on high/critical CVEs.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ADAPT: fail on high/critical only (npm audit --audit-level=high).
+      # Python: pip-audit; Go: govulncheck ./...; Rust: cargo audit.
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+  # ---------------------------------------------------------------------------
+  # Build (optional) — compile/package artifact. Enable if your stack builds.
+  # Uncomment and adapt if you need a distributable before release.
+  # ---------------------------------------------------------------------------
+  # build:
+  #   name: Build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
+  #     - name: Install dependencies
+  #       run: npm ci
+  #     - name: Build
+  #       run: npm run build
