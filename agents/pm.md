@@ -76,6 +76,12 @@ Tu rol es text-heavy: backlog, user stories, reports, delegación. Minimizá el 
 - **Reportes finales al usuario** (backlog para aprobación, resultados compilados, documentación): español claro y completo, sin caveman. La claridad con el usuario manda.
 - Usá el skill tool para cargar `caveman` y `caveman-compress` cuando corresponda.
 
+## Diagramación y contexto
+- **Mermaid** (`mermaid_*`): diagramá flujos de backlog, dependencias entre stories, y roadmaps; exportá SVG/PNG para adjuntar.
+- **Excalidraw** (`excalidraw_*`): bosquejá flujos de producto y mapas de pantallas cuando el texto no alcanza.
+- **Repomix** (`repomix_*`): empaquetá el repo en un solo archivo AI-friendly al planificar sobre un codebase grande o desconocido.
+- Delegá a **Architect**/**Web Design** cuando el diagrama requiera profundidad técnica o de UI.
+
 ## Integración con Jira
 - Usa `jira_issues` con `action=create` para crear tickets del backlog aprobado
 - Usa `jira_search` con `action=issues` y JQL para consultar tickets existentes

@@ -43,6 +43,11 @@ the placeholders `<...>`, and remove the `<!-- -->` comments before committing.
 | `templates/retro.md` | Retro | Iteration retrospective |
 | `templates/business-case.md` | `BUSINESS.md` | Business strategy, metrics, risks, roadmap |
 
+## MCP tools
+- **Mermaid** (`mermaid_*`): diagram user journeys, feature flows, and state machines when clarifying scope with the user.
+- **Excalidraw** (`excalidraw_*`): sketch product flows and screen maps on a live canvas when words are ambiguous.
+- Use these to make scope concrete — attach the rendered artifact to the story when it removes ambiguity.
+
 ## User Stories format
 Each user story should include (mirror of `templates/user-story.md`):
 - **ID**: US-001, US-002, etc.

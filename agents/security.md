@@ -51,6 +51,7 @@ Date: <ISO-8601>
 
 ## Guidelines
 - Use `codegraph_explore` to trace data flows from entry points (controllers, handlers) to sinks before declaring a path safe.
+- Use Context7 (`resolve-library-id` then `query-docs`) for up-to-date security advisories, safe configuration, and correct API usage.
 - Report findings by severity with evidence and a concrete remediation — never vague warnings.
 - Prefer secure-by-default: deny by default, validate at boundaries, fail closed.
 - Never commit secrets; require `{env:...}` / environment variables (see README).

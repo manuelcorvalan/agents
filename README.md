@@ -108,6 +108,10 @@ DEEPSEEK_API_KEY=sk-tu-api-key-aqui
 JIRA_EMAIL=tu-email@ejemplo.com
 JIRA_API_TOKEN=tu-api-token-de-atlassian
 JIRA_BASE_URL=https://tu-espacio.atlassian.net
+
+# Context7 (opcional) — docs actualizadas de librerías
+# Sin key funciona; la key sube el rate limit. https://context7.com/dashboard
+CONTEXT7_API_KEY=
 ```
 
 ### Alternativa: source manual
@@ -219,13 +223,36 @@ Contiene la configuración específica del proyecto: MCP y permisos por agente.
         "JIRA_API_TOKEN": "{env:JIRA_API_TOKEN}",
         "JIRA_BASE_URL": "{env:JIRA_BASE_URL}"
       }
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true,
+      "environment": { "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}" }
+    },
+    "repomix": {
+      "type": "local",
+      "command": ["npx", "-y", "repomix", "--mcp"],
+      "enabled": true
+    },
+    "mermaid": {
+      "type": "local",
+      "command": ["npx", "-y", "mcp-mermaid"],
+      "enabled": true
+    },
+    "excalidraw": {
+      "type": "local",
+      "command": ["npx", "-y", "mcp-excalidraw-server"],
+      "enabled": true
     }
   },
   "agent": {
-    "backend":  { "permission": { "codegraph_*": "allow" } },
-    "frontend": { "permission": { "codegraph_*": "allow" } },
-    "qa":       { "permission": { "codegraph_*": "allow" } },
-    "pm":       { "permission": { "codegraph_*": "deny" } }
+    "backend":  { "permission": { "codegraph_*": "allow", "context7_*": "allow" } },
+    "frontend": { "permission": { "codegraph_*": "allow", "context7_*": "allow" } },
+    "qa":       { "permission": { "codegraph_*": "allow", "context7_*": "allow" } },
+    "architect":{ "permission": { "codegraph_*": "allow", "context7_*": "allow", "repomix_*": "allow", "mermaid_*": "allow", "excalidraw_*": "allow" } },
+    "web-design":{ "permission": { "mermaid_*": "allow", "excalidraw_*": "allow" } },
+    "pm":       { "permission": { "codegraph_*": "deny", "repomix_*": "allow", "mermaid_*": "allow", "excalidraw_*": "allow" } }
   }
 }
 ```
@@ -303,6 +330,51 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend, QA, Architect,
 > **Importante:** los agentes de OpenCode se configuran vía `opencode.json` (o `opencode.jsonc`) a nivel proyecto y global (`~/.config/opencode/opencode.json`). El archivo `config.json` a nivel proyecto **no se lee** (legacy, solo global `~/.config/opencode/config.json` es soportado).
 > **Modo symlink:** para enforcement global (agentes en `~/.config/opencode`), espejar el bloque de permisos en `~/.config/opencode/opencode.json`.
 
+## MCP — Context7 (docs actualizadas)
+
+[Context7](https://github.com/upstash/context7) expone `resolve-library-id` y `query-docs`: trae documentación y ejemplos **actualizados y versionados** de cualquier librería directo al contexto del agente. Elimina APIs alucinadas y loops de retry — menos tokens y menos errores.
+
+Habilitado para los agentes técnicos (backend, frontend, database, devops, architect, qa, security). La API key es **opcional** (`CONTEXT7_API_KEY`); sin key funciona con rate limit menor.
+
+```json
+"context7": {
+  "type": "local",
+  "command": ["npx", "-y", "@upstash/context7-mcp"],
+  "enabled": true,
+  "environment": { "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}" }
+}
+```
+
+## MCP — Repomix (empaquetado de repo)
+
+[Repomix](https://github.com/yamadashy/repomix) empaqueta todo el repositorio en un único archivo AI-friendly, útil para planificar sobre codebases grandes o desconocidos sin explorar archivo por archivo.
+
+Habilitado para **Architect**, **Technical Writer** y **PM**.
+
+```json
+"repomix": {
+  "type": "local",
+  "command": ["npx", "-y", "repomix", "--mcp"],
+  "enabled": true
+}
+```
+
+## MCP — Diagramación (Mermaid + Excalidraw)
+
+Dos servidores para producir diagramas como artefactos reales (no descripciones en prosa):
+
+- **[mcp-mermaid](https://github.com/hustcc/mcp-mermaid)** — renderiza y valida Mermaid (flow, sequence, ER, C4-style); exporta `svg`, `png`, `base64` o URL.
+- **[mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw)** — canvas Excalidraw en vivo; el agente dibuja, se autocorrige vía screenshots y exporta `.excalidraw` al repo. Ideal para wireframes y flujos hand-drawn.
+
+Habilitados para **Architect**, **Web Design**, **PO**, **PM** y (mermaid) **Technical Writer**.
+
+```json
+"mermaid":    { "type": "local", "command": ["npx", "-y", "mcp-mermaid"], "enabled": true },
+"excalidraw": { "type": "local", "command": ["npx", "-y", "mcp-excalidraw-server"], "enabled": true }
+```
+
+> Los 4 MCPs nuevos suman tool schemas al contexto. Los permisos selectivos por agente (`permission.<server>_*`) aseguran que solo quien los usa cargue esos tools.
+
 ## Agentes disponibles
 
 | Agente | Modo | Modelo | Rol |
@@ -328,19 +400,23 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend, QA, Architect,
 
 ## Optimización de tokens
 
-Tres capas reducen el consumo de tokens, cada una dirigida al agente que más le aprovecha:
+Cinco capas reducen el consumo de tokens, cada una dirigida al agente que más le aprovecha:
 
 | Herramienta | Agentes | Qué comprime | Beneficio |
 |---|---|---|---|
 | **caveman** | PM (comunicación interna) | Texto generado por el agente (backlog, resúmenes, delegación) | ~65% menos output |
 | **RTK** | Todos (global) | Output de comandos bash (`git status`, `grep`, `cat`, tests...) | ~60-90% menos tokens |
 | **CodeGraph** | Backend, Frontend, QA, Architect, Database, Data Analyst, Security | Tool calls de exploración de código (call paths, blast radius en 1 llamada) | 69% menos tokens, ~60% menos costo |
+| **Context7** | Backend, Frontend, Database, DevOps, Architect, QA, Security | Docs de librerías en vez de APIs alucinadas → menos loops de retry | Menos iteraciones y errores |
+| **Repomix** | Architect, Technical Writer, PM | Exploración archivo-por-archivo → un solo archivo empaquetado | Menos tool calls de lectura |
 
 Detalles por herramienta:
 
 - **caveman** — el PM usa estilo terse (skill `caveman`) para la comunicación interna agente↔agente: prompts de delegación y resúmenes de subagentes comprimidos. Los reportes al **usuario** se mantienen en español claro y completo. Configurado en `agents/pm.md` y `.claude/CLAUDE.md`.
 - **RTK** — instalado global, reescribe comandos de bash a sus equivalentes comprimidos antes de que el output entre al contexto. No requiere configuración por agente.
 - **CodeGraph** — los agentes técnicos consultan el grafo (`codegraph_explore`) antes de modificar código, evitando loops de grep/read. Configurado en `agents/backend.md`, `agents/frontend.md`, `agents/qa.md`, `agents/architect.md`, `agents/database.md`, `agents/data-analyst.md`, `agents/security.md`. Permisos restringidos vía `permission.codegraph_*` en `opencode.json` (deny para el resto de agentes).
+- **Context7** — los agentes técnicos consultan docs versionadas (`query-docs`) en vez de inventar APIs. Configurado en los `agents/*.md` técnicos y restringido vía `permission.context7_*`.
+- **Repomix** — empaqueta el repo en un archivo para planificar sin explorar. Configurado para Architect/Technical Writer/PM y restringido vía `permission.repomix_*`.
 
 ## Comandos
 
@@ -361,9 +437,9 @@ Detalles por herramienta:
 | `.claude/CLAUDE.md` | — | PM workflow + referencias a agentes |
 | `.claude/agents/*.md` | — | Subagent wrappers (Claude Code) |
 | `.claude/commands/*.md` | — | Slash commands |
-| `.claude/settings.json` | — | MCP Jira + config |
-| `opencode.json` | MCP Jira + permisos por agente (codegraph) + plugin claude-code (opcional) | — |
-| `~/.config/opencode/opencode.json` | Plugin RTK + MCP CodeGraph + plugin claude-code (opcional) + skills caveman + permisos globales (global) | — |
+| `.claude/settings.json` | — | MCP (Jira + context7/repomix/mermaid/excalidraw) |
+| `opencode.json` | MCP (Jira + context7/repomix/mermaid/excalidraw) + permisos por agente (codegraph, context7, repomix, mermaid, excalidraw) + plugin claude-code (opcional) | — |
+| `~/.config/opencode/opencode.json` | Plugin RTK + MCP (CodeGraph + context7/repomix/mermaid/excalidraw) + plugin claude-code (opcional) + skills caveman + permisos globales (global) | — |
 | `~/.config/opencode/AGENTS.md` | Base caveman + guía CodeGraph (global) | — |
 | `.env` | Compartido | Compartido |
 
@@ -448,7 +524,7 @@ opencode-agents/
 │   │   ├── business.md
 │   │   ├── report.md
 │   │   └── devops.md
-│   └── settings.json       # MCP Jira para Claude Code
+│   └── settings.json       # MCP (Jira + context7/repomix/mermaid/excalidraw) para Claude Code
 ├── .github/
 │   └── workflows/
 │       └── ci.yml          # Pipeline CI (lint + build + tests + secret-scan + audit)
@@ -489,7 +565,7 @@ opencode-agents/
 │   └── retro.md
 ├── STANDARDS.md            # DoD/DoR/convenciones/gates (fuente de verdad de calidad)
 ├── config.json             # Referencia: provider/modelos/permisos (global ~/.config/opencode/config.json) — no se lee a nivel proyecto
-├── opencode.json           # MCP Jira + permisos por agente (OpenCode)
+├── opencode.json           # MCP + permisos por agente (OpenCode)
 ├── .codegraph/             # Índice CodeGraph (generado por `codegraph init`, no versionado)
 ├── PRD.md                  # Documento de visión del producto
 └── README.md

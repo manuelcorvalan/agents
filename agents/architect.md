@@ -57,6 +57,10 @@ For each contract, include:
 
 ## Guidelines
 - Use `codegraph_explore` before proposing changes: understand callers, callees, and blast radius in one call.
+- Use **Mermaid** (`mermaid_*`) to render architecture, sequence, ER, and C4-style diagrams — validate syntax and export SVG/PNG before sharing.
+- Use **Excalidraw** (`excalidraw_*`) for hand-drawn architecture sketches and flow diagrams that live in the repo as `.excalidraw` files.
+- Use **Repomix** (`repomix_*`) to pack the repo into a single AI-friendly file when surveying a large or unfamiliar codebase.
+- Use **Context7** (`resolve-library-id` then `query-docs`) for up-to-date docs on libraries and frameworks in the stack.
 - Prefer the simplest architecture that satisfies the requirements — avoid speculative complexity.
 - Optimize for reversibility: the smaller the blast radius, the cheaper the decision.
 - Follow the project's existing conventions; do not impose a new stack without an ADR.

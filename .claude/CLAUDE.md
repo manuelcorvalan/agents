@@ -170,6 +170,18 @@ CodeGraph MCP (`codegraph_explore`) provides a pre-indexed knowledge graph of th
 - **Security**: use `codegraph_explore` to trace data flows from entry points to sinks before declaring a path safe
 - Other roles (PO, Business, Web Design, DevOps, Reporting, Release Manager, Technical Writer) should not use CodeGraph tools
 
+### Diagramming MCP (mermaid, excalidraw)
+Diagram tools are available via MCP (configured in `.claude/settings.json`). Direct their usage to:
+- **Architect**: `mermaid_*` for C4/sequence/ER diagrams; `excalidraw_*` for hand-drawn architecture sketches exported as `.excalidraw`
+- **Web Design**: `excalidraw_*` for wireframes and user flows; `mermaid_*` for journey/state diagrams
+- **PO / PM**: `mermaid_*` and `excalidraw_*` to make backlog flows and scope concrete
+- **Technical Writer**: `mermaid_*` for diagrams embedded in docs
+- Other roles should not use diagram tools
+
+### Context & Token MCP (context7, repomix)
+- **Context7** (`resolve-library-id` then `query-docs`): up-to-date library/framework docs. Direct to Backend, Frontend, Database, DevOps, Architect, QA, Security.
+- **Repomix** (`repomix_*`): packs the repo into one AI-friendly file. Direct to Architect, Technical Writer, PM for large/unfamiliar codebases.
+
 ### File References
 
 | File | Purpose |
@@ -199,7 +211,7 @@ CodeGraph MCP (`codegraph_explore`) provides a pre-indexed knowledge graph of th
 | `bin/factory-init` | Bootstraps the software-factory structure in a new project |
 | `config.json` | OpenCode provider/model config (not used by Claude Code) |
 | `opencode.json` | OpenCode MCP config (reference only; Claude Code uses `.claude/settings.json`) |
-| `.claude/settings.json` | Claude Code MCP Jira configuration |
+| `.claude/settings.json` | Claude Code MCP configuration (Jira + context7/repomix/mermaid/excalidraw) |
 
 ---
 

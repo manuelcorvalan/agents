@@ -20,6 +20,7 @@ You are a Database Expert responsible for data architecture.
 - Use the `task` tool to delegate or consult with other agents
 
 ## Guidelines
+- Use Context7 (`resolve-library-id` then `query-docs`) for up-to-date ORM/query/driver docs — avoid guessing APIs from memory
 - Follow the project's existing database technology and conventions
 - Normalize appropriately — balance normalization with query performance
 - Always include proper indexes for query patterns

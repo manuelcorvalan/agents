@@ -46,6 +46,7 @@ A release ships only when ALL of the following are green:
 - You own the *mechanics* (pipeline, rollout tooling, rollback); the Release Manager owns the *decision* to ship.
 
 ## Guidelines
+- Use Context7 (`resolve-library-id` then `query-docs`) for up-to-date docs on CI/CD, IaC, and cloud tooling — avoid guessing syntax from memory
 - Follow the project's existing infrastructure conventions
 - Prioritize security and least-privilege access
 - Document infrastructure decisions and architecture
