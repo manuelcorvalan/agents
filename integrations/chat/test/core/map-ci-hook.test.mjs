@@ -97,3 +97,14 @@ test('should reject a non-ci gate, a missing session or a wrong platform', () =>
   ];
   assert.deepEqual(notes, [['payload_invalid'], ['payload_invalid'], ['payload_invalid'], ['payload_invalid']]);
 });
+
+// A13.4: session_id is ci:<GITHUB_RUN_ID>, so distinct runs are distinct events
+// and a re-emit inside the same run collapses.
+test('should give distinct event ids to distinct CI runs and collapse a re-emit', () => {
+  const run = (sessionId) => mapCiReceipt(receipt({ session_id: sessionId }), context()).events[0];
+  const first = run('ci:111');
+  const second = run('ci:222');
+  assert.notEqual(first.event_id, second.event_id);
+  assert.notEqual(first.correlation_id, second.correlation_id);
+  assert.equal(first.event_id, run('ci:111').event_id);
+});

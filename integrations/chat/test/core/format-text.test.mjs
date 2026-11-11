@@ -34,3 +34,14 @@ test('should re-verify the allowlisted value against the user-id regex', () => {
 test('should not mention without a mentions map', () => {
   assert.deepEqual([mentionTarget(fixtures['handoff-basic'], undefined), mentionTarget(fixtures['handoff-basic'], null)], [undefined, undefined]);
 });
+
+// A13.3: mentions are keyed by canonical role by the time they reach mentionTarget.
+test('should mention a handoff to a role that is allowlisted', () => {
+  const event = { ...fixtures['handoff-basic'], data: { to: 'cavecrew-reviewer' } };
+  assert.equal(mentionTarget(event, { 'cavecrew-reviewer': 'U0999ZZZZZ' }), 'U0999ZZZZZ');
+});
+
+test('should not match an alias-keyed mentions map (alias resolution happens in load)', () => {
+  const event = { ...fixtures['handoff-basic'], data: { to: 'cavecrew-reviewer' } };
+  assert.equal(mentionTarget(event, { reviewer: 'U0999ZZZZZ' }), undefined);
+});

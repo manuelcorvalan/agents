@@ -2,22 +2,23 @@
   Basado en templates/test-plan.md (Owner: QA, agents/qa.md).
 -->
 
-# Test Plan: US-012 / Team Chat Bridge F1 (US-004..US-011)
+# Test Plan: US-012 / Team Chat Bridge F1 (US-004..US-011) + F2 (A13)
 
-- **Story / Feature**: US-012 — QA del Team Chat Bridge F1 (PRD Core Feature 6; criterios de éxito 7–12; ADR-0003 D1–D16 + A1–A10)
+- **Story / Feature**: US-012 — QA del Team Chat Bridge F1 (PRD Core Feature 6; criterios de éxito 7–12; ADR-0003 D1–D16 + A1–A10) y F2 (ADR-0003 A13.1–A13.5)
 - **Owner**: QA
 - **Entorno**: dev local (Node ≥ 22.13; ejecutado en Node 26.12), Linux. Sin red real: `fetch` inyectado, mock HTTP en loopback o preload que bloquea `fetch`.
 - **Fecha**: 2026-11-11
 - **Rama**: `feature/chat-bridge`
 - **Receipts**: review `docs/reviews/2026-11-11-chat-bridge-f1.md` (re-review en curso), security `docs/security/2026-11-11-chat-bridge-f1.md`
 - **Revisión 2** (2026-11-11): regresión tras los fixes de BUG-QA-001..004, review 9🟡 y security M1/M2/M3/L2/L3; escenarios S12.x añadidos.
+- **Revisión 3** (2026-11-11): auditoría de contrato F2 (A13.1–A13.5), fixtures de eventos OpenCode y escenarios S13.x; BUG-QA-006 cerrado.
 
 ## Estrategia
 
 | Nivel | Qué | Dónde |
 |---|---|---|
 | Unit | funciones puras `src/core/*`, bus, config, adapters | `test/core`, `test/bus`, `test/config`, `test/adapters` (Backend) |
-| Contrato | ajv (2020-12 strict) ↔ validador runtime sobre fixtures y corpus de mutaciones; contrato `chat.postMessage` | `test/core/validate-event.test.mjs`, `test/acceptance/schema-parity.test.mjs`, `test/acceptance/us-006-007-*.test.mjs` |
+| Contrato | ajv (2020-12 strict) ↔ validador runtime sobre fixtures y corpus de mutaciones; contrato `chat.postMessage`; contrato de emisor OpenCode (fixture → plugin → mapper → `event.v1`) | `test/core/validate-event.test.mjs`, `test/acceptance/schema-parity.test.mjs`, `test/opencode/opencode-contract.test.mjs`, `test/acceptance/us-006-007-*.test.mjs` |
 | Integración | `runEmit` → spool → `runSender` con reloj falso y `random` inyectado | `test/app/*`, `test/acceptance/*` |
 | E2E in-process | hook payload → `runEmit` → spool → `runSender` → adapter Slack → **mock HTTP `chat.postMessage` en 127.0.0.1** | `test/e2e/slack-pipeline.test.mjs` |
 | E2E proceso | `bin/chat-emit.mjs` real → spool → `bin/chat-send.mjs` real (detached), con `NODE_OPTIONS=--import` que reemplaza `fetch` por un recorder que falla como caída de Slack (heredado por el sender) | `test/e2e/process-pipeline.test.mjs` |
@@ -92,6 +93,17 @@ Reglas: determinismo (reloj falso, `random` fijo), aislamiento (tmp dir por test
 - **S12.12 (A11 / L2)** Un project dir al que se llega por symlink funciona (el padre se valida con realpath); un spool dir que es symlink se rechaza y no se escribe nada en el destino.
 - **S12.10 (M1 / M2 corpus)** +20 casos en el corpus (ver S8.1): caracteres invisibles (U+00AD, U+034F, U+061C, U+115F, U+1160, U+17B4, U+180E, U+3164, U+FE0F, U+FFA0, U+E0020, fullwidth NFKC) partiendo tokens; claves entre comillas JSON/Python, `=>`, `Basic`, `mysql -p`, `--password=`/`--password v`, valor en la línea siguiente. Control positivo: cada caso debe producir un marcador `[REDACTED:` en el título y en el summary (no solo "no filtró").
 
+### F2 — OpenCode emitter, threads, mentions, `ci`, L2/L3 (A13)
+- **S13.1 (A13.1 contrato, deuda cerrada)** Given los fixtures sintéticos de `test/fixtures/opencode/` en el orden `tool.execute.before` (input `{agent, description, prompt}`) → `session.created` con `parentID` → `message.part.updated` → `session.idle`, When se ejecutan los handlers reales del plugin (stub de `bin/chat-emit.mjs` captura stdin) y cada payload capturado pasa por `mapOpencodeHook`, Then: handoff (`actor` = `agent` emisor o `pm`, `data.to` normalizado, `task_title` redactado, `span_id` = hash del call id), `agent.started` (`agent_id` = child, `session_id` = root), `agent.finished` con el texto acumulado; los 3 eventos validan contra `event.v1`; `prompt`/`model`/`background` nunca salen del proceso (`PROMPT-SENTINEL-MUST-NOT-LEAVE` ausente del stdin capturado y de los eventos mapeados).
+- **S13.2 (A13.1 root idle)** Given un `session.idle` del root con receipt, Then solo 0..n `gate.result` (sin `agent.finished`), actor `pm` y relay marcado (A8); sin receipt, 0 eventos.
+- **S13.3 (A13.1 error)** Given `session.error` de una child session, Then `agent.finished` con `outcome: "error"` y sin summary (cierra la deuda de A4-c para OpenCode).
+- **S13.4 (A13.1 acumulación de texto)** Given `message.part.updated` (part type `text`) y `chat.message` (`output.parts[].text`), Then el plugin pasa `last_text` al mapper y el summary del `agent.finished` es ese texto; sin texto → `outcome: unknown` y sin summary.
+- **S13.5 (A13.2 threads)** Given un run con `handoff` → `agent.started` → `agent.finished` → `gate.result`, Then el `handoff` abre el thread (`thread_ts` = ts devuelto), `agent.*` responde dentro, `gate.result` va top-level y nunca consulta `threads.json`; un `gate.result` solo no crea `threads.json`; un evento del mismo run en un segundo canal va top-level y no pisa el thread del primero.
+- **S13.6 (A13.2 lifecycle)** Given `threads.json` con entradas viejas, Then al arrancar el sender se podan por `spool.dead_letter_ttl_days`; el thread sobrevive reinicios del sender; dry-run no siembra `threads.json` (A7).
+- **S13.7 (A13.3 mentions)** Given `config.mentions` con roles/aliases allowlisteados, Then solo `handoff` menciona (`data.to` allowlisteado), `agent.*` y `gate.result` no; `<!channel>`/`<!everyone>`/`<!here>`/`<@U…>` en texto libre quedan escapados y nunca producen mención viva; el `<@U…>` construido se re-verifica contra `^U[A-Z0-9]{8,}$`; ≤ 50 entradas (50 aceptadas, 51 rechazadas); claves que no son rol/alias rechazadas; ids inválidos rechazados.
+- **S13.8 (A13.4 `ci`)** Given texto libre que imita un receipt CI (`CI RECEIPT` + `Veredicto: PASS`), Then `detectGates` no produce ningún gate (ni `ci` ni otro); Given el receipt estructurado `platform: "ci"`, Then `gate.result` con `actor`/`source.platform` = `ci`, dedup por run (`ci:<GITHUB_RUN_ID>`): re-emitir el mismo resultado colapsa, runs distintos dan `event_id`/`correlation_id` distintos; release semver y counts validados; summary redactado.
+- **S13.9 (A13.5 L2/L3)** Given un spool bajo un ancestro intermedio world-writable sin sticky, Then `spool_parent_world_writable`; con sticky `1777` se acepta; el padre inmediato world-writable sigue rechazado; Given `CHAT_BRIDGE_CONFIG` relativo, Then resuelve contra `projectDir`, no contra `cwd` (L3).
+
 ## Data de Test
 
 | # | Dato | Valor | Origen |
@@ -104,12 +116,29 @@ Reglas: determinismo (reloj falso, `random` fijo), aislamiento (tmp dir por test
 | 6 | Bloqueo de red a nivel proceso | `NODE_OPTIONS=--import=test/helpers/no-network-preload.mjs` | `test/helpers/no-network-preload.mjs` |
 | 7 | Reloj / jitter | `fakeTime()` (sleep avanza el reloj), `random` fijo | `test/helpers/env.mjs` |
 | 8 | `.env` de proyecto | archivo tmp 0600 en `CLAUDE_PROJECT_DIR` tmp (nunca el `.env` real) | `test/e2e/process-pipeline.test.mjs` |
+| 9 | Fixtures de eventos OpenCode (F2) | 6 JSON sintéticos: `tool.execute.before` (input con `agent`/`description`/`prompt`), `session.created` con `parentID`, `message.part.updated`, `session.idle`, `session.error`, `chat.message` | `test/fixtures/opencode/` |
 
 ## Resultados
 
-**Revisión 2 (vigente).** `npm test` (node:test + coverage, umbral 80/80): **704 tests, 704 pass, 0 fail, 0 todo** en 4 corridas consecutivas, sin fallos. Una corrida mostró coverage menor (97.28 / 95.06) porque Backend estaba editando `redact.mjs` en paralelo; no fue un flake de tests y la corrida siguiente volvió a 99.40 / 97.10. 139 de esos tests son de QA (`test/e2e`, `test/acceptance`). `npm run lint`: 0 errores. Coverage **99.40 % líneas / 97.10 % branches** (mínimo por archivo: `transcript.mjs` 89.13 % branches). `npm audit --audit-level=high`: exit 0; 4 moderadas solo de dev (minimatch vía eslint 10, Security L1); `--omit=dev`: 0.
+**Revisión 3 (vigente, F2).** `npm test` (node:test + coverage, umbral 80/80): **851 tests, 851 pass, 0 fail, 0 todo**. `npm run lint`: 0 errores. Coverage global **99.01 % líneas / 95.09 % branches**; mínimo por archivo: `plugin.js` 94.09 % líneas / 76.34 % branches (el umbral del proyecto es global). 14 tests nuevos respecto de la base de 837: 4 de contrato OpenCode (`test/opencode/opencode-contract.test.mjs`, fixtures S13.1–S13.4), 2 de `ci` no forjable por texto (`detect-gates`), 1 de dedup por run (`map-ci-hook`), 2 de mención por alias resuelto (`format-text`), 2 de mentions/`projectDir` (`load-config`), 1 de thread sin `gate.result` (`sender`) y 2 de normalización alias→rol en `loadBridgeConfig` (BUG-QA-006). `npm audit --audit-level=high`: exit 0.
 
-Revisión 1 (histórico): 549 tests, 545 pass / 4 todo; 99.46 % / 97.00 %.
+Revisión 2 (histórico): 704 tests, 704 pass, 0 fail, 0 todo; 99.40 % / 97.10 %; `npm audit --audit-level=high` exit 0 (4 moderadas solo de dev, minimatch vía eslint 10; `--omit=dev`: 0).
+
+### F2 — contrato A13 (Revisión 3)
+
+| Escenario | Resultado esperado | Resultado actual | Estado |
+|-----------|--------------------|------------------|--------|
+| S13.1 | fixture → payload del plugin → `event.v1` válido; prompt fuera | idem; 3 payloads capturados, 3 eventos válidos, sentinel ausente | PASS |
+| S13.2 | root idle → solo `gate.result`, relay marcado | idem | PASS |
+| S13.3 | child `session.error` → `outcome: error` | idem | PASS |
+| S13.4 | `message.part.updated`/`chat.message` alimentan el summary | idem (`Contract check finished.` / `Chat message summary.\nSecond paragraph.`) | PASS |
+| S13.5 | thread por run; gate top-level; segundo canal top-level | idem; `gate.result` solo no crea `threads.json` | PASS |
+| S13.6 | prune TTL; thread sobrevive reinicios; dry-run no siembra | idem | PASS |
+| S13.7 | mención solo en handoff allowlisteado; inyección imposible; ≤ 50 | idem en escape/allowlist/límite; alias resuelto a rol al cargar | PASS |
+| S13.8 | `ci` no detectable por texto; dedup por run | idem | PASS |
+| S13.9 | L2 cadena completa; sticky permitido; L3 resuelto contra `projectDir` | idem | PASS |
+
+### F1 — contrato D1–D16 (Revisión 2, histórico)
 
 | Escenario | Resultado esperado | Resultado actual | Estado |
 |-----------|--------------------|------------------|--------|
@@ -134,6 +163,8 @@ Revisión 1 (histórico): 549 tests, 545 pass / 4 todo; 99.46 % / 97.00 %.
 | S12.9–S12.10 | ReDoS rechazado; corpus M1/M2 enmascarado | idem | PASS |
 | S12.11–S12.12 | leftover de rotación a dead-letter; reglas de symlink de A11 | idem | PASS |
 
+Revisión 1 (histórico): 549 tests, 545 pass / 4 todo; 99.46 % / 97.00 %.
+
 **Verificación de los tests de QA editados por Backend** (no se debilitó ninguna aserción):
 - `us-005-emitter`: la lista esperada de tipos cambió por A8. El `REVIEW RECEIPT` embebido en el `SubagentStop` de qa ya no se publica como Reviewer; ahora es un relay marcado que se deduplica. El resto de las aserciones no cambió.
 - `us-010-011-delivery` (lock): ya no es `todo`. Se añadió `first.heartbeat(...)` para simular el heartbeat del holder. Es válido porque el fix es el heartbeat, y S12.8 lo prueba con el sender real durante un `Retry-After` de 20 min.
@@ -155,10 +186,15 @@ Revisión 1 (histórico): 549 tests, 545 pass / 4 todo; 99.46 % / 97.00 %.
 | OBS-3 | 🟢 | A8 + dedup D4: si un agente que no es owner publica primero un receipt idéntico, el post verificado posterior del owner se suprime y solo queda el relay. Cualquier agente puede degradar la atribución, pero nunca suplantarla. | Abierto: aceptado por A8 ("never upgraded"); se sugiere incluir el actor en el fingerprint en F2 |
 | OBS-4 | 🟢 | A8 listaba `release → release-manager` en `GATE_OWNERS`, sin gate `release` en el schema. | **Cerrado**: el ADR se enmendó y el gate de release se difiere a F2 |
 | Security M4 | — | `.env` del repo con modo 0644 (acción del operador). QA no lo verificó: no se lee `.env`. | Pendiente del operador |
+| BUG-QA-006 | 🟡 | A13.3: `mentions` admite claves alias, pero `mentionTarget` buscaba `event.data.to` (rol canónico ya normalizado), así que un `mentions: {"reviewer": "U…"}` nunca mencionaba. | **Cerrado**: `resolveMentionKeys` en `loadBridgeConfig` normaliza alias→rol al cargar (`settings.mentions` queda claveado por rol; el rol explícito gana). `mentionTarget` sin cambios. Tests en `load-config` + `format-text`. |
+| OBS-5 | 🟡 | `opencode/plugin.js` cubre 94.09 % líneas / 76.34 % branches. Los huecos son las ramas de fallo del spawn (`error`, `EPIPE`, `kill`). El umbral 80/80 del proyecto es global, no por archivo. | Abierto (aceptado): el fallo de emisión es best-effort por diseño (A13.1) |
+| OBS-6 | 🟢 | `map-ci-hook` acepta un receipt con solo `verdict: "pass"/"fail"` y sintetiza `raw_verdict`. A13.4 define `raw_verdict` en el shape. No es forjable (ruta dedicada, no texto), pero es más laxo que el contrato. | Abierto: decidir si se exige `raw_verdict` |
+| OBS-7 | 🟢 | `format-text.test.mjs` ("mention an allowlisted alias") construía un `data.to` con alias, imposible tras `normalizeRole`. | **Cerrado con BUG-QA-006**: el test ahora usa el rol canónico y la normalización se prueba en `load-config`. |
 
 ## Resumen
 
-- **Total**: 49 escenarios (34 de S4–S11, 3 de regresión de bugs, 12 de S12)
-- **PASS**: 49
+- **Total**: 58 escenarios (34 de S4–S11, 3 de regresión de bugs, 12 de S12, 9 de F2/S13)
+- **PASS**: 58
 - **FAIL**: 0
-- **Bloqueantes**: 0 🔴. Abiertos: 2 🟢 (OBS-2, OBS-3) y Security M4, que es acción del operador.
+- **Bloqueantes**: 0 🔴. Abiertos: OBS-2/OBS-3/OBS-6 🟢, OBS-5 🟡 (coverage de ramas del plugin) y Security M4, que es acción del operador.
+- **Tests**: 848 (847 pass, 0 fail, 1 todo) · **Coverage**: 99.00 % líneas / 95.06 % branches · **Lint**: 0 errores · **Audit high/critical**: 0.

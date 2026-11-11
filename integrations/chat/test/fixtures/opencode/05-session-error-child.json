@@ -1,0 +1,10 @@
+{
+  "type": "session.error",
+  "properties": {
+    "sessionID": "ses_child",
+    "error": {
+      "name": "ProviderError",
+      "message": "model overloaded"
+    }
+  }
+}

@@ -363,3 +363,10 @@ test('should release the lock and report sender_failed when draining throws', as
   const result = await runSender({ env, clock: () => Date.now(), sleep: async () => { throw new Error('boom'); } });
   assert.deepEqual([result.reason, existsSync(join(spoolDir, 'sender.lock'))], ['sender_failed', false]);
 });
+
+test('should not create a threads.json entry from a gate.result alone (A13.2)', async (t) => {
+  const { sender, enqueue, paths } = setup(t);
+  enqueue(withId(fixtures['gate-result-dod'], '01'));
+  await sender.run();
+  assert.equal(existsSync(paths.threads), false);
+});

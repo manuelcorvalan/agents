@@ -90,6 +90,23 @@ test('should default mentions to an empty map', () => {
   assert.deepEqual(resolveSettings({ version: 1, provider: 'slack', default_channel: 'C0123456789' }, {}).mentions, {});
 });
 
+test('should resolve alias mention keys to their role when loading', (t) => {
+  const config = { ...example, mentions: { reviewer: 'U0123ABCDE' } };
+  const configPath = join(makeTmpDir(t), 'config.json');
+  writeFileSync(configPath, JSON.stringify(config));
+  const { settings } = loadBridgeConfig({ configPath });
+  assert.deepEqual(settings.mentions, { 'cavecrew-reviewer': 'U0123ABCDE' });
+  assert.equal(Object.hasOwn(settings.mentions, 'reviewer'), false);
+});
+
+test('should keep the explicit role mention when both role and alias are configured', (t) => {
+  const config = { ...example, mentions: { reviewer: 'U0123ABCDE', 'cavecrew-reviewer': 'U0456EFGHI' } };
+  const configPath = join(makeTmpDir(t), 'config.json');
+  writeFileSync(configPath, JSON.stringify(config));
+  const { settings } = loadBridgeConfig({ configPath });
+  assert.deepEqual(settings.mentions, { 'cavecrew-reviewer': 'U0456EFGHI' });
+});
+
 test('should reject a mention key that is not a role or alias when loading', (t) => {
   const config = { ...example, mentions: { ghost: 'U0123ABCDE' } };
   // Runtime-only rule: JSON Schema cannot cross-reference identities.json.
@@ -355,4 +372,18 @@ test('should use CHAT_BRIDGE_SPOOL_DIR when absolute', () => {
 
 test('should resolve spool dir under the project when env is unset', () => {
   assert.equal(resolveSpoolDir({ spool: { dir: '.chat-bridge' } }, {}, '/p'), '/p/.chat-bridge');
+});
+
+test('should accept exactly 50 mentions entries (A13.3 boundary)', () => {
+  const mentions = Object.fromEntries(Array.from({ length: 50 }, (_, index) => [`r${index}`, 'U0123ABCDE']));
+  assert.deepEqual(validateConfig({ ...example, mentions }), []);
+});
+
+// A13.5 L3: a relative CHAT_BRIDGE_CONFIG (including from the process env)
+// resolves against projectDir, never against cwd.
+test('should resolve a relative CHAT_BRIDGE_CONFIG against projectDir', (t) => {
+  const projectDir = makeTmpDir(t);
+  writeFileSync(join(projectDir, 'config.json'), JSON.stringify({ ...example, verbosity: 'verbose' }));
+  const { settings } = loadBridgeConfig({ env: { CHAT_BRIDGE_CONFIG: 'config.json' }, projectDir });
+  assert.equal(settings.verbosity, 'verbose');
 });

@@ -8,6 +8,7 @@ import { resolveSettings } from '../../src/config/load-config.mjs';
 export const PACKAGE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const REPO_DIR = resolve(PACKAGE_DIR, '..', '..');
 export const SCHEMA_DIR = join(PACKAGE_DIR, 'schema');
+export const OPENCODE_FIXTURE_DIR = join(PACKAGE_DIR, 'test', 'fixtures', 'opencode');
 export const IDENTITIES_PATH = join(PACKAGE_DIR, 'config', 'identities.json');
 export const EXAMPLE_CONFIG_PATH = join(PACKAGE_DIR, 'config', 'config.example.json');
 
@@ -24,6 +25,14 @@ export function loadFixtures(kind) {
     .filter((name) => name.endsWith('.json'))
     .sort()
     .map((name) => ({ name, event: readJson(join(dir, name)) }));
+}
+
+/** Synthetic OpenCode event fixtures (A13.1), keyed by file stem. */
+export function loadOpencodeFixtures() {
+  return Object.fromEntries(readdirSync(OPENCODE_FIXTURE_DIR)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => [name.replace('.json', ''), readJson(join(OPENCODE_FIXTURE_DIR, name))]));
 }
 
 export function loadIdentities() {

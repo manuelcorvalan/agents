@@ -264,6 +264,23 @@ export function resolveSettings(config, env = {}) {
   };
 }
 
+/**
+ * BUG-QA-006: event.data.to is normalized to a canonical role before render, so
+ * settings.mentions must be keyed by role. Alias keys are resolved to their target;
+ * an explicit role key wins over an alias key.
+ */
+function resolveMentionKeys(mentions, aliases) {
+  const resolved = {};
+  for (const [key, value] of Object.entries(mentions)) {
+    if (!Object.hasOwn(aliases, key)) resolved[key] = value;
+  }
+  for (const [key, value] of Object.entries(mentions)) {
+    const role = aliases[key];
+    if (role !== undefined && !Object.hasOwn(resolved, role)) resolved[role] = value;
+  }
+  return resolved;
+}
+
 function readJson(path, label) {
   let raw;
   try {
@@ -296,7 +313,9 @@ export function loadBridgeConfig({ env = {}, configPath, identitiesPath, project
   if (identityErrors.length > 0) throw new ConfigError('identities_invalid', identityErrors);
   const mentionErrors = config.mentions === undefined ? [] : validateMentions(config.mentions, identities);
   if (mentionErrors.length > 0) throw new ConfigError('config_invalid', mentionErrors);
-  return { settings: resolveSettings(config, env), identities };
+  const settings = resolveSettings(config, env);
+  settings.mentions = resolveMentionKeys(settings.mentions, identities.aliases);
+  return { settings, identities };
 }
 
 /** Spool dir: CHAT_BRIDGE_SPOOL_DIR (absolute) or <projectDir>/<spool.dir>. */

@@ -168,6 +168,38 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # CI gate emit — post a `gate.result` to the chat bridge (ADR-0003 A13.4).
+  # Informational only: never blocks the pipeline, NOT a merge check.
+  # `always()` runs it even when a gate job fails, so FAIL is emitted as
+  # reliably as PASS. Runs on push to main only (no PR spam).
+  # ---------------------------------------------------------------------------
+  ci-gate:
+    name: CI gate (chat bridge emit)
+    needs: [lint, test, secret-scan, audit, chat-bridge]
+    if: github.event_name == 'push' && always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Emit CI gate.result
+        env:
+          CHAT_BRIDGE_ENABLED: 'true'
+          # config.json is gitignored (D16) and absent on a clean checkout;
+          # use the committed example so the emit pipeline runs (dry-run).
+          CHAT_BRIDGE_CONFIG: integrations/chat/config/config.example.json
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          GATE_OK: ${{ needs.lint.result == 'success' && needs.test.result == 'success' && needs['secret-scan'].result == 'success' && needs.audit.result == 'success' && needs['chat-bridge'].result == 'success' }}
+        run: |
+          if [ "$GATE_OK" = "true" ]; then verdict="pass"; raw="PASS"; conclusion="success"; else verdict="fail"; raw="FAIL"; conclusion="failure"; fi
+          cat <<EOF | node integrations/chat/bin/chat-emit.mjs || true
+          {"platform":"ci","session_id":"ci:${{ github.run_id }}","gate":"ci","verdict":"$verdict","raw_verdict":"$raw","summary":"CI: CI $conclusion","counts":{"high":0,"critical":0}}
+          EOF
+
+  # ---------------------------------------------------------------------------
   # Build (optional) — compile/package artifact. Enable if your stack builds.
   # Uncomment and adapt if you need a distributable before release.
   # ---------------------------------------------------------------------------

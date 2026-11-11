@@ -1,0 +1,11 @@
+{
+  "type": "session.created",
+  "properties": {
+    "info": {
+      "id": "ses_child",
+      "title": "QA contract run",
+      "parentID": "ses_root",
+      "agent": "qa"
+    }
+  }
+}

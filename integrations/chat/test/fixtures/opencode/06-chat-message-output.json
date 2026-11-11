@@ -1,0 +1,8 @@
+{
+  "sessionID": "ses_child",
+  "parts": [
+    { "type": "text", "text": "Chat message summary." },
+    { "type": "tool", "tool": "bash" },
+    { "type": "text", "text": "Second paragraph." }
+  ]
+}

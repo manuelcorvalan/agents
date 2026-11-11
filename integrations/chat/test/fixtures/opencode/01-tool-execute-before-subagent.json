@@ -1,0 +1,14 @@
+{
+  "tool": "subagent",
+  "sessionID": "ses_root",
+  "agent": "pm",
+  "messageID": "msg_01",
+  "id": "call_01",
+  "input": {
+    "agent": "qa",
+    "description": "Verify US-013 contract",
+    "prompt": "PROMPT-SENTINEL-MUST-NOT-LEAVE",
+    "model": "x",
+    "background": false
+  }
+}

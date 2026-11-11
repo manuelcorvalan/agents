@@ -537,12 +537,13 @@ Referencias: `STANDARDS.md` (DoD/DoR/gates), `templates/` (formatos canónicos),
 
 ## Team Chat Bridge
 
-Integración opcional (`integrations/chat/`) que publica en Slack la actividad del equipo de agentes: handoffs, inicio y fin de agentes, resultados de gates (review, DoD, security) y resúmenes redactados. Cada agente aparece con su propio nombre y emoji. En F1 el emisor son hooks de Claude Code (ya registrados en `.claude/settings.json`) y solo hay salida hacia Slack.
+Integración opcional (`integrations/chat/`) que publica en Slack la actividad del equipo de agentes: handoffs, inicio y fin de agentes, resultados de gates (review, DoD, security, CI) y resúmenes redactados. Cada agente aparece con su propio nombre y emoji. Tiene dos emisores: hooks de Claude Code y un plugin de OpenCode. Sigue siendo **solo salida** hacia Slack. F2 agregó hilos por run, mentions controladas y el gate `ci`; Discord queda fuera de alcance.
 
 - **Apagado por defecto** (`CHAT_BRIDGE_ENABLED`). Cuando lo habilitás, arranca en **dry-run**.
-- Los hooks no bloquean: ≤2 s, siempre exit 0, sin stdout. Si el bridge o Slack fallan, los agentes siguen igual.
+- Los hooks y el plugin no bloquean: ≤2 s, siempre exit 0, sin stdout. Si el bridge o Slack fallan, los agentes siguen igual.
 - No publica diffs, código, prompts ni secretos. El token del bot vive solo en `.env` (`chmod 600`).
 - Requiere Node ≥ 22.13 y una app de Slack con scopes `chat:write` + `chat:write.customize`.
+- **Mentions** solo alcanzan a IDs de una allowlist de `config.json`, y solo en `handoff`. Un agente mal portado puede pinguear a una persona de esa lista; revisión de Security pendiente antes de F3.
 
 Guía completa de instalación, configuración, troubleshooting y modelo de seguridad: **[integrations/chat/README.md](integrations/chat/README.md)**. Diseño: [ADR-0003](docs/adr/0003-chat-bridge.md).
 
@@ -610,7 +611,7 @@ opencode-agents/
 │   ├── kb/                 # Knowledge base
 │   └── metrics.md          # KPIs y métricas
 ├── integrations/
-│   └── chat/               # Team Chat Bridge (Slack, F1) — ver integrations/chat/README.md
+│   └── chat/               # Team Chat Bridge (Slack, F1+F2) — ver integrations/chat/README.md
 ├── templates/              # Formatos canónicos de artefactos
 │   ├── business-case.md
 │   ├── prd.md

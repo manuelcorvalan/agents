@@ -1,12 +1,12 @@
 # Team Chat Bridge (`integrations/chat/`)
 
-Publica la actividad del equipo de agentes en un canal de Slack: cada agente aparece con su propio nombre y emoji. Diseño y contrato: [ADR-0003](../../docs/adr/0003-chat-bridge.md) (incluye las enmiendas A1–A12, D15 y D16). Visión: `PRD.md`, Core Feature 6.
+Publica la actividad del equipo de agentes en un canal de Slack: cada agente aparece con su propio nombre y emoji. Hay dos emisores (hooks de Claude Code y plugin de OpenCode), hilos por run, mentions controladas y un gate `ci` que emite el workflow. Diseño y contrato: [ADR-0003](../../docs/adr/0003-chat-bridge.md) (incluye las enmiendas A1–A13, D15 y D16). Visión: `PRD.md`, Core Feature 6.
 
-> **Apagado por defecto.** Si no configurás nada, los hooks salen en milisegundos y no hacen nada. Aunque lo habilites, arranca en **dry-run**: no envía nada a Slack hasta que lo pidas explícitamente.
+> **Apagado por defecto.** Si no configurás nada, los hooks y el plugin salen en milisegundos y no hacen nada. Aunque lo habilites, arranca en **dry-run**: no envía nada a Slack hasta que lo pidas explícitamente.
 
 ## Índice
 
-- [Qué hace (alcance F1)](#qué-hace-alcance-f1)
+- [Qué hace (alcance F1 + F2)](#qué-hace-alcance-f1--f2)
 - [Requisitos](#requisitos)
 - [Cómo funciona](#cómo-funciona)
 - [Instalación punta a punta](#instalación-punta-a-punta)
@@ -17,6 +17,10 @@ Publica la actividad del equipo de agentes en un canal de Slack: cada agente apa
 - [4. Archivo de configuración (`config/config.json`)](#4-archivo-de-configuración-configconfigjson)
 - [5. Habilitar en dry-run y verificar](#5-habilitar-en-dry-run-y-verificar)
 - [6. Pasar a live](#6-pasar-a-live)
+- [7. Emisor de OpenCode (F2)](#7-emisor-de-opencode-f2)
+- [8. Hilos por run (F2)](#8-hilos-por-run-f2)
+- [9. Mentions (F2)](#9-mentions-f2)
+- [10. Gate ci desde el workflow (F2)](#10-gate-ci-desde-el-workflow-f2)
 - [Desactivar y desinstalar](#desactivar-y-desinstalar)
 - [Rotar el token](#rotar-el-token)
 - [Archivos en `.chat-bridge/`](#archivos-en-chat-bridge)
@@ -26,30 +30,40 @@ Publica la actividad del equipo de agentes en un canal de Slack: cada agente apa
 - [Desarrollo](#desarrollo)
 - [Referencias](#referencias)
 
-## Qué hace (alcance F1)
+## Qué hace (alcance F1 + F2)
 
-- **Emisor:** hooks de Claude Code (`PreToolUse` con matcher `Agent|Task`, `SubagentStart`, `SubagentStop`, `Stop`). En este repo ya están registrados en `.claude/settings.json`; para otro proyecto hay que cablearlos ([paso 0](#0-cablear-los-hooks-en-un-proyecto-nuevo)).
+F2 suma el emisor de OpenCode, hilos por run, mentions controladas y el gate `ci`. Sigue siendo **solo salida** hacia Slack. **No hay Discord**: el adaptador de Discord, los avatares como imagen, el ruteo por story y la mención automática del PM en `gate.result` quedan diferidos (ADR A13).
+
+- **Dos emisores, un solo entry point** (`bin/chat-emit.mjs`):
+  - **Claude Code:** hooks `PreToolUse` (`Agent|Task`), `SubagentStart`, `SubagentStop` y `Stop`, ya registrados en `.claude/settings.json`. Para otro proyecto hay que cablearlos ([paso 0](#0-cablear-los-hooks-en-un-proyecto-nuevo)).
+  - **OpenCode:** plugin JS en [`opencode/plugin.js`](opencode/plugin.js), auto-cargado desde `~/.config/opencode/plugins/`. Instalación en [paso 7](#7-emisor-de-opencode-f2).
+- **CI:** el workflow emite un receipt estructurado con `platform: "ci"` y publica un `gate.result` con owner `ci`. No se detecta por texto (un agente no puede forjarlo). Hoy el job apunta al config de ejemplo, así que sale en dry-run; ver [paso 10](#10-gate-ci-desde-el-workflow-f2).
 - **Destino:** Slack, solo salida, a través de `chat.postMessage`. Slack nunca llama al bridge.
 - **Eventos publicados** (con la verbosidad `default`):
 
-| Evento | Cuándo | Qué muestra |
-|---|---|---|
-| `handoff` | un agente delega a otro (`Agent`/`Task`) | `Handoff to <agente>: <título de la tarea>` (redactado). El prompt de la delegación **nunca** se publica. |
-| `agent.started` | arranca un subagente | `Started` |
-| `agent.finished` | termina un subagente | `Finished (success\|unknown)` más un resumen redactado del reporte |
-| `gate.result` | aparece un receipt de `STANDARDS.md` (`REVIEW RECEIPT`, `DoD — <story>`, `SECURITY RECEIPT`) | `<Gate> gate [<story>]: PASS\|FAIL [<veredicto>] (conteos)` |
+| Evento | Cuándo | Qué muestra | Dónde |
+|---|---|---|---|
+| `handoff` | un agente delega a otro (`Agent`/`Task`/`subagent`) | `Handoff to <agente>: <título de la tarea>` (redactado). El prompt de la delegación **nunca** se publica. | Abre el hilo del run |
+| `agent.started` | arranca un subagente | `Started` | Responde en el hilo del run |
+| `agent.finished` | termina un subagente | `Finished (success\|error\|unknown)` más un resumen redactado del reporte. OpenCode sí emite `error`; Claude Code no (deuda A4-c cerrada en F2). | Responde en el hilo del run |
+| `gate.result` | aparece un receipt de `STANDARDS.md` (`REVIEW RECEIPT`, `DoD — <story>`, `SECURITY RECEIPT`) o llega un receipt `ci` | `<Gate> gate [<story>]: PASS\|FAIL [<veredicto>] (conteos)` | Arriba, en el canal de gates; nunca en un hilo |
 
-- **No se publica:** eventos por herramienta, diffs, bloques de código, prompts, valores de `.env` ni secretos.
-- **Identidad:** cada agente postea como `<display_name> (agent)` con el `icon_emoji` definido en [`config/identities.json`](config/identities.json). El sufijo ` (agent)` es fijo para que ningún agente pueda hacerse pasar por una persona ni por Slackbot.
-- **Fuera de F1:** Discord, emisor OpenCode, hilos, @mentions, avatares como imagen y el gate de release (F2); inbound desde Slack (F3).
+- **No se publica:** eventos por herramienta, diffs, bloques de código, prompts, el `prompt`/`model`/`background` de una delegación de OpenCode, valores de `.env` ni secretos.
+- **Identidad:** cada agente postea como `<display_name> (agent)` con el `icon_emoji` definido en [`config/identities.json`](config/identities.json). El sufijo ` (agent)` es fijo para que ningún agente pueda hacerse pasar por una persona ni por Slackbot. El gate `ci` usa el rol `ci` (`CI`, `:robot_face:`).
+- **Fuera de F2:** Discord, avatares como imagen, ruteo por story, mención automática del PM en `gate.result` e inbound desde Slack (F3).
 
-Limitaciones conocidas de F1: `agent.started` no muestra quién lo lanzó, no se mide la duración y `outcome` nunca es `error` (ADR A4/A4-c).
+Limitaciones conocidas:
+
+- Claude Code: `agent.started` no muestra quién lo lanzó y `outcome` nunca es `error` (ADR A4/A4-c). La duración no se mide.
+- OpenCode: el mapa `sesión hija → agente` vive en memoria del plugin. Si recargás OpenCode en medio de un run, los subagentes ya lanzados se reportan como `unknown`.
+- OpenCode: el resumen sale del último texto que acumuló el plugin (`message.part.updated` / `chat.message`). Si el plugin pierde esa actualización, el evento se publica sin resumen.
 
 ## Requisitos
 
 - **Node.js ≥ 22.13** (`engines` en [`package.json`](package.json)). El job de CI corre en Node 24; no hace falta que coincidan, solo que tu `node` cumpla el mínimo.
 - **Claude Code** con los hooks de `.claude/settings.json`. Cada hook ejecuta `node "$CLAUDE_PROJECT_DIR/integrations/chat/bin/chat-emit.mjs"` con `timeout: 2`. Por eso el directorio del proyecto donde corre Claude Code tiene que contener `integrations/chat/`. Si solo symlinkeás `.claude/` dentro de otro proyecto, los hooks van a apuntar a un path que no existe.
 - **`bin/factory-init` no instala el bridge.** El script symlinkea `agents/`, `commands/`, copia `templates/` y `.env.example`, y nada más. `integrations/chat/` se copia o symlinkea aparte ([paso 0](#0-cablear-los-hooks-en-un-proyecto-nuevo)).
+- **OpenCode (opcional, emisor F2).** Verificado contra `opencode v2.2.7`. No usa `opencode.json`: el plugin se auto-carga desde `~/.config/opencode/plugins/` ([paso 7](#7-emisor-de-opencode-f2)). OpenCode no carga `.env`; el plugin lanza `node`, así que `node` tiene que estar en el `PATH` de OpenCode.
 - **Un workspace de Slack** donde puedas instalar apps (permisos de admin o aprobación de un admin).
 - **Sin dependencias de runtime.** No hace falta `npm install` para usar el bridge; las devDependencies solo sirven para lint y tests (ver [Desarrollo](#desarrollo)).
 
@@ -72,6 +86,8 @@ sequenceDiagram
 ```
 
 - El hook **nunca** hace red, **nunca** escribe en stdout y **siempre** sale con código 0. Si el bridge o Slack fallan, los agentes siguen trabajando igual.
+- El plugin de OpenCode recorre el mismo camino: mapea el evento de sesión a un payload normalizado y lanza `chat-emit.mjs` con ese JSON por stdin. El resto (enable, `.env`, config, redacción, spool, sender) no cambia.
+- El sender agrupa por `correlation_id` (hash de la sesión raíz): el `handoff` abre el hilo del run y los `agent.*` responden ahí ([paso 8](#8-hilos-por-run-f2)).
 - El sender reintenta errores transitorios con backoff exponencial y manda los definitivos a `dead-letter.jsonl`. Respeta un máximo de 1 mensaje por segundo por canal.
 - La entrega es *at-least-once*: muy rara vez puede aparecer un mensaje duplicado.
 
@@ -148,6 +164,22 @@ Cada paso trae su comando y su señal de éxito. Los detalles están en las secc
     tail -n 5 .chat-bridge/dead-letter.jsonl
     ```
     Éxito: el mensaje aparece en Slack en pocos segundos y `dead-letter.jsonl` no suma líneas.
+
+13. **Plugin de OpenCode instalado** (solo si usás OpenCode; [paso 7](#7-emisor-de-opencode-f2)).
+    ```bash
+    ln -s "$PWD/integrations/chat/opencode" ~/.config/opencode/plugins/chat-bridge
+    ls ~/.config/opencode/plugins/chat-bridge/plugin.js
+    ```
+    Éxito: imprime el path. Reiniciá OpenCode y corré una delegación; `dry-run.log` suma una línea de `Started`/`Finished` del subagente.
+
+14. **Mentions configuradas** (opcional; [paso 9](#9-mentions-f2)). Agregá el bloque `mentions` a `config/config.json`.
+    ```bash
+    node -e "console.log(JSON.stringify(require('./integrations/chat/config/config.json').mentions ?? {}))"
+    ```
+    Éxito: imprime el mapa, o `{}` si no querés pings.
+
+15. **Gate `ci`** (opcional; [paso 10](#10-gate-ci-desde-el-workflow-f2)). El job `ci-gate` ya existe en `ci.yml` y corre en `push` a `main`. Para que salga de dry-run, cargá `SLACK_BOT_TOKEN` y un canal real.
+    Éxito: un push a `main` publica `CI gate: PASS|FAIL` en el canal de gates.
 
 > **Ojo con `.env.example`.** Copiarlo deja el bridge apagado: `CHAT_BRIDGE_ENABLED` y `CHAT_BRIDGE_DRY_RUN` vienen vacías. Escribí `CHAT_BRIDGE_ENABLED=true` a mano y, si querés forzar dry-run, `CHAT_BRIDGE_DRY_RUN=true`; si esa clave queda vacía o no la definís, se usa `dry_run` de `config.json` (default `true`).
 
@@ -248,7 +280,7 @@ La app necesita **solo dos scopes de bot**: `chat:write` y `chat:write.customize
 3. No actives **Socket Mode**, **Event Subscriptions**, **Interactivity & Shortcuts** ni **Slash Commands**.
 4. Dejá vacíos los **User Token Scopes**.
 
-> No agregues otros scopes. F1 no los usa, y ampliarlos requiere una enmienda del ADR (D14). El inbound (F3) va a usar una app y un token distintos.
+> No agregues otros scopes. El bridge no los usa, y ampliarlos requiere una enmienda del ADR (D14). El inbound (F3) va a usar una app y un token distintos.
 
 ## 2. Instalar la app, invitar al bot y obtener los channel IDs
 
@@ -266,14 +298,15 @@ La app necesita **solo dos scopes de bot**: `chat:write` y `chat:write.customize
 
 ## 3. Variables de entorno (`.env`)
 
-El bridge lee **exactamente un archivo**, `<proyecto>/.env`, donde `<proyecto>` es `CLAUDE_PROJECT_DIR`. Del archivo toma solo las claves de la tabla; cualquier otra se descarta sin leerla.
+El bridge lee **exactamente un archivo**, `<proyecto>/.env`, donde `<proyecto>` es `CHAT_BRIDGE_PROJECT_DIR` (lo pasa el plugin de OpenCode) o `CLAUDE_PROJECT_DIR` (hooks de Claude Code). Del archivo toma solo las claves de la tabla; cualquier otra se descarta sin leerla.
 
 | Clave | Quién la lee | Valores válidos | Para qué sirve |
 |---|---|---|---|
 | `CHAT_BRIDGE_ENABLED` | hook y sender | `true` o `false`, exactos | Tiene que valer `true` para que el bridge haga algo. |
 | `CHAT_BRIDGE_DRY_RUN` | hook y sender | `true` o `false`, exactos | Pisa a `dry_run` del config. `false` envía a Slack; `true` fuerza dry-run. |
 | `CHAT_BRIDGE_CONFIG` | hook y sender | path de hasta 1024 caracteres | Config alternativo. Un path relativo se resuelve contra el directorio del proyecto. Default: `integrations/chat/config/config.json`. |
-| `CHAT_BRIDGE_SPOOL_DIR` | hook y sender | path **absoluto** | Directorio del spool. Default: `<proyecto>/.chat-bridge/`. Conviene dejarlo dentro del proyecto. |
+| `CHAT_BRIDGE_SPOOL_DIR` | hook, plugin y sender | path **absoluto** | Directorio del spool. Default: `<proyecto>/.chat-bridge/`. Conviene dejarlo dentro del proyecto. |
+| `CHAT_BRIDGE_PROJECT_DIR` | emisor y sender | path **absoluto**, en el **entorno del proceso** | La setea el plugin de OpenCode con el directorio del proyecto. Gana sobre `CLAUDE_PROJECT_DIR`. No la pongas en `.env`: no está en el allowlist del archivo. |
 | `SLACK_BOT_TOKEN` | solo el sender | `xoxb-…` (`^xoxb-[A-Za-z0-9-]{10,250}$`) | Token del bot. El hook nunca lo carga. |
 | `CHAT_BRIDGE_CHANNEL_*` (5 claves) | solo el sender | `^[CDG][A-Z0-9]{8,}$` | Canales por `.env`. Ver [Canales por `.env`](#canales-por-env-enmienda-a12). |
 
@@ -352,12 +385,13 @@ Referencia de campos. La autoridad es [`schema/config.v1.schema.json`](schema/co
 | `provider` | — | `"slack"` (requerido) |
 | `default_channel` | — | channel ID (requerido). Recibe todo lo que no esté en `channels`. |
 | `channels` | `{}` | Mapa de tipo de evento a channel ID. Claves posibles: `handoff`, `agent.started`, `agent.finished`, `gate.result`. |
+| `mentions` | `{}` | Mapa rol/alias → user ID de Slack (`^U[A-Z0-9]{8,}$`), máximo 50. Solo `handoff` menciona al destino ([paso 9](#9-mentions-f2)). |
 | `dry_run` | `true` | `false` para enviar a Slack (ver [paso 6](#6-pasar-a-live)). |
 | `verbosity` | `"default"` | `minimal`: solo `gate.result`. `default`: handoffs, inicio/fin y gates. `verbose`: además un `agent.finished` del PM en cada turno (ruidoso). Ninguna publica eventos por herramienta. |
 | `redaction.max_summary_chars` | `500` | 0–2000. **`0` = solo metadatos**: se envían tipo, agente y destino, sin resumen. |
 | `redaction.max_lines` | `8` | 0–50 líneas de resumen (`0` = sin límite de líneas; el de caracteres sigue aplicando). |
 | `redaction.max_task_title_chars` | `120` | 0–200. Con `0` el handoff no lleva título. |
-| `redaction.strip_code_blocks`, `strip_diffs`, `mask_home_paths` | `true` | Solo pueden valer `true`; no se pueden desactivar en F1. |
+| `redaction.strip_code_blocks`, `strip_diffs`, `mask_home_paths` | `true` | Solo pueden valer `true`; no se pueden desactivar. |
 | `redaction.extra_patterns` | `[]` | Regex propias, ver abajo. |
 | `delivery.timeout_ms` | `5000` | 100–30000 |
 | `delivery.max_attempts` | `5` | 1–10 |
@@ -430,14 +464,131 @@ El `event_id` es determinístico (sale de `session_id` + `agent_id`), así que r
 > ```
 > Se recrea solo, con permisos `0700`/`0600`, en el próximo hook. Lo ya drenado no se reconstruye: solo se publican los eventos que se emitan desde ese momento.
 
+## 7. Emisor de OpenCode (F2)
+
+OpenCode no tiene hooks como Claude Code. Extiende con **plugins JS**, y los plugins locales se auto-cargan desde `~/.config/opencode/plugins/`: no hace falta tocar `opencode.json` (su array `plugins` solo acepta paquetes npm). El plugin [`opencode/plugin.js`](opencode/plugin.js) escucha los eventos de sesión y, por cada evento mapeado, lanza `node <proyecto>/integrations/chat/bin/chat-emit.mjs` con un payload normalizado por stdin.
+
+**Instalación (symlink, recomendada):**
+
+```bash
+mkdir -p ~/.config/opencode/plugins
+ln -s /home/manuel/agents/integrations/chat/opencode ~/.config/opencode/plugins/chat-bridge
+ls ~/.config/opencode/plugins/chat-bridge/plugin.js
+```
+
+Alternativa: `opencode plugin add /home/manuel/agents/integrations/chat/opencode`.
+
+Después **reiniciá OpenCode**. Los plugins se cargan al arrancar; no hay recarga en caliente.
+
+Qué hace y qué no:
+
+- **Enable:** el plugin **siempre** emite. `CHAT_BRIDGE_ENABLED`, el `.env` y `config.json` los resuelve `chat-emit.mjs`, no el plugin. OpenCode no carga `.env`; el plugin pasa `CHAT_BRIDGE_PROJECT_DIR=<proyecto>` y el emisor lee `<proyecto>/.env` como con Claude Code. Con el bridge apagado, el proceso hijo sale en milisegundos.
+- **Proyecto:** el plugin toma `ctx.directory` y busca `integrations/chat/bin/chat-emit.mjs` ahí. Si el proyecto no contiene el bridge, es un no-op silencioso. El directorio del repo donde vive el plugin no define el proyecto.
+- **`node` en `PATH`:** el plugin lanza `node` como proceso hijo. Tiene que cumplir la versión mínima de [Requisitos](#requisitos). Si falla, el plugin ignora el error: no rompe la sesión de OpenCode.
+- **Qué publica:** `handoff` (tool `subagent` o `task`), `agent.started` (`session.created` de una sesión hija), `agent.finished` (`session.idle` o `session.error` de una sesión hija) y `gate.result` (receipts en el texto acumulado de la sesión raíz).
+- **Qué NO publica:** el `prompt` de la delegación, el `model`, `background`, la salida de otras herramientas, diffs ni código. Del input de la delegación salen solo `agent`/`subagent_type` y `description`; el resto se descarta antes de salir del proceso.
+- **`outcome: error`:** un `session.error` de un subagente publica `agent.finished` con `outcome: error`. Es la deuda A4-c cerrada en F2: OpenCode expone una señal de falla que Claude Code no da.
+- **Texto para el resumen:** el plugin acumula el último texto por sesión desde `chat.message` y `message.part.updated`, y lo pasa como `last_text`. El mapper de OpenCode no lee transcripts.
+- **Límites:** el mapa `sesión hija → agente` es memoria del plugin. Un reload en medio de un run degrada `agent.*` a `unknown`. Si el plugin pierde una actualización de texto, el evento sale sin resumen. Ambos están aceptados en el registro de deuda de A13.
+
+## 8. Hilos por run (F2)
+
+No requiere configuración. El sender abre **un hilo por run**; la clave es `correlation_id`, que sale de la sesión raíz:
+
+- `handoff` abre el hilo: se publica como mensaje raíz y su `ts` de Slack queda como `thread_ref`. Es, en la práctica, el primer evento del run; si un `agent.*` llega antes, ese abre el hilo.
+- `agent.started` y `agent.finished` responden en ese hilo (`thread_ts`).
+- `gate.result` **nunca** va a un hilo: se publica arriba, en su canal (`channels["gate.result"]` o `default_channel`), para que el veredicto se vea sin abrir el hilo. Tampoco consulta `threads.json`.
+
+Estado persistente: `<spool>/threads.json`, modo `0600`, una entrada por run:
+
+```json
+{ "<correlation_id>": { "provider": "slack", "channel": "C0123ABCDEF", "thread_ref": "1730000000.000100", "created_at": "2026-11-11T12:00:00.000Z" } }
+```
+
+- **TTL:** las entradas más viejas que `spool.dead_letter_ttl_days` (default 7 días) se podan al arrancar el sender.
+- **Un run, un canal:** si el mismo run publica en un segundo canal, esos eventos van arriba. No hay un hilo por canal.
+- **Dry-run no siembra hilos:** el `message_ref` sintético del dry-run no se guarda. Al pasar a live, los eventos nuevos abren su propio hilo.
+- **Ausente o corrupto:** se trata como registro vacío. Los eventos se publican arriba y el registro se vuelve a sembrar con el próximo `handoff`.
+
+## 9. Mentions (F2)
+
+Bloque `mentions` en `config/config.json`. Mapea un rol o alias a un **user ID de Slack**:
+
+```json
+"mentions": { "reviewer": "U0123ABCDE", "qa": "U0456EFGHI" }
+```
+
+Reglas (validadas por [`src/config/load-config.mjs`](src/config/load-config.mjs) y [`schema/config.v1.schema.json`](schema/config.v1.schema.json)):
+
+- **Claves:** roles o aliases que ya existen en `identities.json`. Una clave desconocida rechaza el config con `config_detail mentions.<clave>: not a role or alias`.
+- **Valores:** user ID de Slack, `^U[A-Z0-9]{8,}$`. Un channel ID (`C…`), un nombre (`@ana`) o un ID de DM rechazan el config.
+- **Máximo:** 50 entradas.
+- **Quién menciona:** solo `handoff`, y solo al destino (`data.to`) cuando ese rol o alias está en el bloque. `agent.started`, `agent.finished` y `gate.result` no mencionan.
+- **Cómo se renderiza:** después del escape de mrkdwn, el sender agrega ` <@U…>` construido desde el ID del allowlist y lo revalida contra la misma regex. El texto libre nunca se parsea, así que `<!channel>`, `<!here>`, `<!everyone>`, `<!subteam^…>` y `<@U…>` inyectados en la salida de un agente siguen siendo imposibles.
+- **Sin bloque o `{}`:** no se menciona a nadie.
+
+> **Riesgo aceptado (A13.3).** Un agente mal portado o inyectado puede poner un rol del allowlist en el argumento `agent` del subagente y así pinguear a una persona real. Mitigaciones: allowlist chica y propiedad del equipo, una sola mención por evento, solo en `handoff`. Security lo revisa antes de F3. Si no querés que nadie reciba pings, dejá `mentions` vacío.
+
+## 10. Gate `ci` desde el workflow (F2)
+
+El gate `ci` **no** se detecta leyendo texto: [`src/core/detect-gates.mjs`](src/core/detect-gates.mjs) no tiene header para `ci`. Solo lo emite un receipt estructurado con `platform: "ci"`, y [`src/core/map-ci-hook.mjs`](src/core/map-ci-hook.mjs) fija `actor: "ci"` sin ambigüedad de relay. Por eso un agente no puede escribir un "CI PASS" en su reporte y publicarlo como gate.
+
+Receipt (stdin de `chat-emit.mjs`):
+
+```json
+{
+  "platform": "ci",
+  "session_id": "ci:1234567890",
+  "gate": "ci",
+  "verdict": "pass",
+  "raw_verdict": "PASS",
+  "release": "v1.2.3",
+  "counts": { "high": 0, "critical": 0 },
+  "summary": "CI: CI success"
+}
+```
+
+- `session_id` = `ci:<GITHUB_RUN_ID>`. Cada run es un evento distinto; reemitir el mismo veredicto en el mismo run se deduplica.
+- `raw_verdict` es `PASS` o `FAIL`; `verdict` se normaliza a `pass`/`fail`. `release` (semver) y `counts` (`high`/`critical`) son opcionales.
+- `summary` pasa por la misma redacción que el resto. Los `counts` no son texto libre.
+- Identidad: rol `ci` de [`config/identities.json`](config/identities.json) (`CI`, `:robot_face:`); `GATE_OWNERS.ci = "ci"`.
+- Destino: `channels["gate.result"]` o `default_channel`. Nunca va a un hilo.
+
+**Job del workflow (estado actual):** [`ci.yml`](../../.github/workflows/ci.yml) ya tiene el job `ci-gate` (nombre visible `CI gate (chat bridge emit)`):
+
+- **Disparo:** solo en `push` a `main`, con `if: github.event_name == 'push' && always()`. Los PR no lo corren.
+- **Dependencias:** `needs: [lint, test, secret-scan, audit, chat-bridge]`. El veredicto es `PASS` solo si los cinco terminaron en `success`; cualquier otro resultado publica `FAIL`.
+- **Receipt:** arma el JSON con `session_id: "ci:<run_id>"` y `counts` en cero, y lo pipea a `bin/chat-emit.mjs`.
+- **No bloquea:** el paso termina con `|| true`. El gate `ci` es informativo y no es un merge check.
+
+**Ojo: hoy publica en dry-run.** El job apunta `CHAT_BRIDGE_CONFIG` a `config/config.example.json`, que trae `dry_run: true` y `default_channel: "C0000000000"`. El evento se encola y se renderiza en el spool efímero del runner, pero **no llega a Slack**. Para que llegue:
+
+1. Cargá `SLACK_BOT_TOKEN` como secret del repo (el job ya lo lee) y dale al bot acceso al canal.
+2. Poné un `default_channel` real en el config que usa el job, o pasalo por `CHAT_BRIDGE_CHANNEL_DEFAULT` y dejá `dry_run: false`.
+
+```yaml
+      - name: Emit CI gate.result
+        env:
+          CHAT_BRIDGE_ENABLED: 'true'
+          CHAT_BRIDGE_CONFIG: integrations/chat/config/config.example.json
+          CHAT_BRIDGE_DRY_RUN: 'false'
+          CHAT_BRIDGE_CHANNEL_DEFAULT: ${{ secrets.SLACK_GATE_CHANNEL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+```
+
+- **Override de canal:** la validación exige un `default_channel` con formato válido en el JSON (`C0000000000` lo cumple). Después, `CHAT_BRIDGE_CHANNEL_DEFAULT` gana ([A12](#canales-por-env-enmienda-a12)).
+- **Drenaje:** `chat-emit.mjs` encola y lanza el sender separado. Si necesitás que el job falle cuando no publica, esperá a que aparezca y desaparezca `.chat-bridge/sender.lock` y revisá `.chat-bridge/dead-letter.jsonl`.
+- **Sin scopes nuevos:** no agrega scopes ni `*:history` (D14).
+
 ## Desactivar y desinstalar
 
-Tres niveles independientes. Ninguno borra archivos por sí solo.
+Niveles independientes. Ninguno borra archivos por sí solo.
 
 | Acción | Efecto | Qué queda |
 |---|---|---|
-| `CHAT_BRIDGE_ENABLED=false` en `.env` (o borrar la clave) | El hook sale antes de leer el config y el sender no drena (`disabled`). Deja de emitirse todo. | `.chat-bridge/`, `config.json` y el token, intactos. Volver a `true` lo reactiva. |
+| `CHAT_BRIDGE_ENABLED=false` en `.env` (o borrar la clave) | Los emisores salen antes de leer el config y el sender no drena (`disabled`). Deja de publicarse todo. | `.chat-bridge/`, `config.json` y el token, intactos. Volver a `true` lo reactiva. |
 | Quitar los 4 hooks de `.claude/settings.json` | Claude Code deja de invocar el bridge. | Todo lo demás intacto; el bridge no se entera de ningún evento. |
+| Borrar el symlink `~/.config/opencode/plugins/chat-bridge` y reiniciar OpenCode | OpenCode deja de cargar el plugin. | Todo lo demás intacto. Con Claude Code, los hooks siguen emitiendo. |
 | `rm -rf .chat-bridge/` | Borra spool, cursor, ledger, dead-letter y logs. | Se recrea vacío en el próximo hook. Se pierde el historial de dry-run y la deduplicación previa. |
 | Borrar `integrations/chat/` | Desinstala el código. | Los hooks quedan apuntando a un path inexistente: quitarlos **antes**. |
 | Revocar el token o desinstalar la app en Slack | Corta el acceso al workspace. | `.env` conserva el token viejo: borralo. |
@@ -446,10 +597,11 @@ Orden recomendado para una desinstalación completa:
 
 1. Poné `CHAT_BRIDGE_ENABLED=false` y esperá a que no haya un sender corriendo (`ls .chat-bridge/sender.lock` no existe).
 2. Quitá el bloque `hooks` del bridge en `.claude/settings.json` y reiniciá Claude Code.
-3. Borrá `.chat-bridge/`.
-4. Borrá `SLACK_BOT_TOKEN` (y las `CHAT_BRIDGE_*`) de `.env`.
-5. Revocá el token en la app de Slack, o desinstalá la app.
-6. Si querés, borrá `integrations/chat/` y `config/config.json`.
+3. Borrá el symlink `~/.config/opencode/plugins/chat-bridge` y reiniciá OpenCode.
+4. Borrá `.chat-bridge/`.
+5. Borrá `SLACK_BOT_TOKEN` (y las `CHAT_BRIDGE_*`) de `.env`.
+6. Revocá el token en la app de Slack, o desinstalá la app.
+7. Si querés, borrá `integrations/chat/` y `config/config.json`.
 
 Detalles:
 
@@ -491,6 +643,7 @@ Directorio `0700`, archivos `0600`. Está en `.gitignore`. El bridge rechaza sym
 | `outbox.jsonl` | Spool de eventos ya redactados (un JSON por línea, ≤4 KB). Se rota tras drenarse. |
 | `cursor.json` | Posición de lectura del sender. |
 | `ledger.jsonl` | Eventos enviados (`event_id`, proveedor, canal, `ts`). Se usa para deduplicar; se poda a 30 días. |
+| `threads.json` | Un hilo por run: `correlation_id` → `{provider, channel, thread_ref, created_at}`. Se poda con `dead_letter_ttl_days` (default 7 días). |
 | `dead-letter.jsonl` | Eventos que no se pudieron enviar: `reason`, `error_code`, `attempts`. TTL de 7 días por defecto. |
 | `sender.lock` | `{pid, started_at}` mientras corre el sender. |
 | `bridge.log` | Diagnóstico. Solo códigos de razón, nunca valores ni secretos. Se trunca al pasar 1 MiB. |
@@ -513,6 +666,17 @@ tail -n 5  .chat-bridge/dead-letter.jsonl
   - que `.env` no esté siendo ignorado por permisos. Con `env_bad_mode`, `env_bad_owner`, `env_not_regular` o `env_too_large` el archivo se descarta completo, el bridge queda apagado y **no deja log**. Verificá con `stat -c '%a %U' .env`: tiene que dar `600 <tu usuario>`.
 - Claude Code no está cargando los hooks, o el proyecto no contiene `integrations/chat/` (ver [Requisitos](#requisitos) y [paso 0](#0-cablear-los-hooks-en-un-proyecto-nuevo)). Verificá con `grep -c 'chat-emit.mjs' .claude/settings.json`: tiene que dar `4`.
 - El spool dir fue rechazado. Ver `spool_parent_world_writable` más abajo.
+
+### OpenCode: el plugin no publica nada
+
+Revisá en este orden:
+
+1. **Symlink y reinicio.** `ls -l ~/.config/opencode/plugins/chat-bridge/plugin.js` tiene que resolver. Después de crear o borrar el symlink, reiniciá OpenCode.
+2. **El proyecto abierto contiene el bridge.** El plugin resuelve `<ctx.directory>/integrations/chat/bin/chat-emit.mjs`. Si el directorio de OpenCode no es un proyecto con `integrations/chat/`, no emite nada.
+3. **`node` en el `PATH` de OpenCode.** El plugin lanza `node`; probá `node -v` desde la misma shell que abre OpenCode.
+4. **El bridge está habilitado.** El plugin no mira `CHAT_BRIDGE_ENABLED`: lo resuelve `chat-emit.mjs` desde `<proyecto>/.env`, con los mismos códigos `env_*` de la tabla de arriba. Si el archivo tiene permisos incorrectos, no hay log y no se publica nada.
+5. **`.chat-bridge/bridge.log`.** Buscá `info payload_invalid` (payload que el mapper rechazó) o `error config_*`. `info hook_ignored` es normal: el evento no se mapea y no se registra. `info no_project_dir` solo aparece en pruebas manuales sin `CHAT_BRIDGE_PROJECT_DIR` ni `CLAUDE_PROJECT_DIR`; el plugin siempre pasa el primero.
+6. **Subagentes como `unknown`.** El mapa `sesión hija → agente` se pierde al recargar el plugin. No es un bug: reiniciá el run completo si necesitás la identidad correcta.
 
 ### Errores de Slack (en `dead_letter <código> status=<http> attempts=<n>`)
 
@@ -559,7 +723,7 @@ Con el config inválido, el hook no encola nada y sale con 0; los agentes no se 
 
 ### `no_project_dir`
 
-`info no_project_dir`: el hook corrió sin un `CLAUDE_PROJECT_DIR` absoluto (típico al probarlo a mano). El bridge **nunca** usa el `cwd` del payload como fuente de `.env`. Sin project dir no carga `.env`, y el spool y el config se resuelven contra el directorio actual. Exportá `CLAUDE_PROJECT_DIR="$PWD"` para probar.
+`info no_project_dir`: el hook corrió sin un `CLAUDE_PROJECT_DIR` (ni `CHAT_BRIDGE_PROJECT_DIR`) absoluto, típico al probarlo a mano. El bridge **nunca** usa el `cwd` del payload como fuente de `.env`. Sin project dir no carga `.env`, y el spool y el config se resuelven contra el directorio actual. Exportá `CLAUDE_PROJECT_DIR="$PWD"` (o `CHAT_BRIDGE_PROJECT_DIR="$PWD"`) para probar.
 
 ### `spool_parent_world_writable` (y `spool_dir_unsafe`, `spool_dir_bad_owner`)
 
@@ -595,6 +759,7 @@ npm audit --audit-level=high
 ```
 
 - **Es solo test: no publica en Slack.** No necesita `SLACK_BOT_TOKEN` ni acceso a red; los tests inyectan `fetch` y usan un spool temporal por test.
+- **El gate `ci` va por un job aparte:** `ci-gate` corre en `push` a `main`, después de los otros cinco jobs. Hoy apunta al config de ejemplo, así que publica en **dry-run**; ver [paso 10](#10-gate-ci-desde-el-workflow-f2).
 - Sube `integrations/chat/coverage/lcov.info` como artefacto (7 días).
 - El job `secret-scan` (gitleaks) del mismo workflow cubre todo el repo, incluido `integrations/chat/`.
 - El workflow lo declara como check requerido (`chat-bridge`). Si lo configurás en branch protection, verificá el nombre exacto del check en la lista del PR: el nombre visible del job es `Chat Bridge (lint, test+coverage, audit)`.
@@ -607,21 +772,24 @@ cd integrations/chat && npm ci && npm run lint && npm run test:coverage
 
 ## Modelo de seguridad
 
-Qué garantiza el bridge en F1 (detalle en ADR-0003 D7/D15 y en el [security gate](../../docs/security/2026-11-11-chat-bridge-f1.md)):
+Qué garantiza el bridge en F1/F2 (detalle en ADR-0003 D7/D15 y A13, y en el [security gate F1](../../docs/security/2026-11-11-chat-bridge-f1.md)):
 
 - **El token** vive solo en `.env` (`0600`) o en el entorno del sender. Nunca va en argv, spool, logs, errores ni config, y el hook nunca lo carga.
 - **Red:** solo `https://slack.com/api/chat.postMessage`, con `redirect: "error"` y timeout. No hay incoming webhooks.
 - **Redacción doble** (en el hook y en el sender), que falla cerrada. Quita bloques de código y diffs; enmascara tokens conocidos, claves `key=value`, `Bearer`/`Basic`, claves privadas, credenciales en URLs, cadenas de alta entropía y rutas `/home/<usuario>`; elimina caracteres invisibles y de control bidireccional.
 - **Higiene de Slack:** escapa `&`, `<` y `>`, así que `<!channel>`, `<!here>`, `<@U…>` y los links disfrazados no funcionan. Además usa `link_names: false` y sin unfurl.
 - **Hooks no bloqueantes:** ≤2 s, exit 0 y cero bytes en stdout, así que el bridge no puede alterar decisiones de Claude Code.
+- **Mentions desde allowlist:** `<@U…>` se construye solo desde IDs de `config.mentions`, después del escape, y se revalida. El texto de un agente nunca produce una mención ([paso 9](#9-mentions-f2)).
+- **Gate `ci` fuera del alcance del texto:** `ci` no está en los headers que detecta `detect-gates.mjs`. Un agente no puede forjar un CI PASS escribiéndolo en su reporte ([paso 10](#10-gate-ci-desde-el-workflow-f2)).
 
-### Riesgos residuales (aceptados para F1)
+### Riesgos residuales (aceptados para F1/F2)
 
 1. **Los resúmenes son salida de un LLM.** Pueden traer contenido de archivos no confiables o de un prompt injection, y la redacción por patrones no detecta un secreto parafraseado (por ejemplo, deletreado en palabras). Si no podés aceptarlo, usá `"max_summary_chars": 0` (solo metadatos) y, si querés, `"max_task_title_chars": 0`.
 2. **Las URLs sueltas son clickeables.** Slack linkifica `https://…` aunque el unfurl esté apagado, así que un agente manipulado podría publicar un link de phishing bajo un nombre de agente confiable. No hagas clic en links de mensajes del bridge sin verificarlos. Antes de F3 se va a agregar defang o allowlist de dominios (ADR A10).
 3. **Visibilidad del canal.** Todo lo publicado (títulos de stories, resúmenes, nombres de agentes) lo ve **todo el canal**. Usá un canal **privado** con membresía restringida; en un canal público lo ve todo el workspace.
 4. **Los mensajes del chat son informativos, no autoritativos.** El estado real de un gate es el **receipt archivado**: `docs/reviews/YYYY-MM-DD-<scope>.md` (review) y `docs/security/YYYY-MM-DD-<scope>.md` (security), según ADR A9. Ninguna decisión de merge o release debe tomarse a partir de Slack.
-5. **"Relayed (unverified)".** Un resultado de gate se atribuye al agente dueño (Reviewer para review, QA para DoD, Security para security) **solo** si el receipt sale del `SubagentStop` de ese mismo agente. Si aparece en otro lado (el PM citándolo en su turno, u otro agente que lo incluye en su reporte), se publica con la identidad de quien lo emitió y con el prefijo `Relayed (unverified):`. Así nadie puede postear un "PASS" con la identidad de Security. Tratá estos mensajes como un rumor y verificá el receipt archivado.
+5. **"Relayed (unverified)".** Un resultado de gate se atribuye al agente dueño (Reviewer para review, QA para DoD, Security para security) **solo** si el receipt sale del `SubagentStop` de ese mismo agente. Si aparece en otro lado (el PM citándolo en su turno, u otro agente que lo incluye en su reporte), se publica con la identidad de quien lo emitió y con el prefijo `Relayed (unverified):`. Así nadie puede postear un "PASS" con la identidad de Security. Tratá estos mensajes como un rumor y verificá el receipt archivado. El gate `ci` no sufre esto: lo emite solo el job del workflow y su actor es `ci`.
+6. **Mentions = ping a una persona real.** Si un agente mal portado o inyectado pone un rol del allowlist en el argumento `agent` del subagente, Slack notifica a la persona mapeada. Solo se menciona en `handoff`, una vez por evento, y solo IDs de una allowlist chica. Security lo revisa antes de F3. Para desactivarlo, borrá el bloque `mentions` de `config.json`. También implica que `mention` da a los agentes una vía de notificación fuera del canal: no la uses para personas que no estén en el equipo.
 
 ### Buenas prácticas
 
@@ -643,7 +811,7 @@ Las devDependencies (`eslint`, `ajv`) son solo para lint y tests; el runtime no 
 
 ## Referencias
 
-- [ADR-0003: Team Chat Bridge](../../docs/adr/0003-chat-bridge.md)
+- [ADR-0003: Team Chat Bridge](../../docs/adr/0003-chat-bridge.md), enmienda A13 (F2, sin Discord)
 - [Security gate F1](../../docs/security/2026-11-11-chat-bridge-f1.md)
 - [Review F1](../../docs/reviews/2026-11-11-chat-bridge-f1.md)
 - `PRD.md`, Core Feature 6 y criterios de éxito 7–12
