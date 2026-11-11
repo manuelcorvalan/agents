@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-agents.local/integrations/chat/schema/config.v1.schema.json",
+  "title": "Chat Bridge config v1",
+  "description": "Bridge configuration (ADR-0003 D10). Contains NO secrets; SLACK_BOT_TOKEN lives only in the environment. Redaction values may only make redaction stricter.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "provider", "default_channel"],
+  "properties": {
+    "version": { "const": 1 },
+    "provider": { "enum": ["slack"] },
+    "dry_run": { "type": "boolean", "default": true },
+    "verbosity": { "enum": ["minimal", "default", "verbose"], "default": "default" },
+    "default_channel": { "$ref": "#/$defs/channelId" },
+    "channels": {
+      "type": "object",
+      "propertyNames": { "enum": ["handoff", "agent.started", "agent.finished", "gate.result"] },
+      "additionalProperties": { "$ref": "#/$defs/channelId" }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_summary_chars": { "type": "integer", "minimum": 0, "maximum": 2000, "default": 500 },
+        "max_lines": { "type": "integer", "minimum": 0, "maximum": 50, "default": 8 },
+        "max_task_title_chars": { "type": "integer", "minimum": 0, "maximum": 200, "default": 120 },
+        "strip_code_blocks": { "const": true },
+        "strip_diffs": { "const": true },
+        "mask_home_paths": { "const": true },
+        "extra_patterns": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 30000, "default": 5000 },
+        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5 },
+        "per_channel_rate_per_sec": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 1 }
+      }
+    },
+    "spool": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "description": "Relative to the project dir. Absolute paths only via CHAT_BRIDGE_SPOOL_DIR.",
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))[A-Za-z0-9._/-]{1,200}$",
+          "default": ".chat-bridge"
+        },
+        "max_bytes": { "type": "integer", "minimum": 65536, "maximum": 52428800, "default": 5242880 },
+        "dead_letter_ttl_days": { "type": "integer", "minimum": 1, "maximum": 90, "default": 7 }
+      }
+    }
+  },
+  "$defs": {
+    "channelId": { "type": "string", "pattern": "^[CDG][A-Z0-9]{8,}$" }
+  }
+}

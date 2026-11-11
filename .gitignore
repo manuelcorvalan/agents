@@ -20,6 +20,9 @@
 .claude/logs/
 .claude/tmp/
 
+# --- Chat bridge — local spool/ledger/log (ADR-0003 D2) -------------------
+.chat-bridge/
+
 # --- Node.js / JavaScript --------------------------------------------------
 node_modules/
 npm-debug.log*

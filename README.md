@@ -493,6 +493,17 @@ La software factory integra un pipeline de calidad con **fases y gates** que el 
 
 Referencias: `STANDARDS.md` (DoD/DoR/gates), `templates/` (formatos canónicos), `docs/adr/` (decisiones), `docs/metrics.md` (KPIs), `.github/workflows/ci.yml` (pipeline CI), `bin/factory-init` (inicialización).
 
+## Team Chat Bridge
+
+Integración opcional (`integrations/chat/`) que publica en Slack la actividad del equipo de agentes: handoffs, inicio y fin de agentes, resultados de gates (review, DoD, security) y resúmenes redactados. Cada agente aparece con su propio nombre y emoji. En F1 el emisor son hooks de Claude Code (ya registrados en `.claude/settings.json`) y solo hay salida hacia Slack.
+
+- **Apagado por defecto** (`CHAT_BRIDGE_ENABLED`). Cuando lo habilitás, arranca en **dry-run**.
+- Los hooks no bloquean: ≤2 s, siempre exit 0, sin stdout. Si el bridge o Slack fallan, los agentes siguen igual.
+- No publica diffs, código, prompts ni secretos. El token del bot vive solo en `.env` (`chmod 600`).
+- Requiere Node ≥ 22.13 y una app de Slack con scopes `chat:write` + `chat:write.customize`.
+
+Guía completa de instalación, configuración, troubleshooting y modelo de seguridad: **[integrations/chat/README.md](integrations/chat/README.md)**. Diseño: [ADR-0003](docs/adr/0003-chat-bridge.md).
+
 ## Estructura del proyecto
 
 ```
@@ -556,6 +567,8 @@ opencode-agents/
 │   ├── adr/                # Architecture Decision Records
 │   ├── kb/                 # Knowledge base
 │   └── metrics.md          # KPIs y métricas
+├── integrations/
+│   └── chat/               # Team Chat Bridge (Slack, F1) — ver integrations/chat/README.md
 ├── templates/              # Formatos canónicos de artefactos
 │   ├── business-case.md
 │   ├── prd.md

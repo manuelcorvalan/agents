@@ -1,8 +1,58 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/integrations/chat/bin/chat-emit.mjs\"",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/integrations/chat/bin/chat-emit.mjs\"",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/integrations/chat/bin/chat-emit.mjs\"",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/integrations/chat/bin/chat-emit.mjs\"",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  },
   "mcpServers": {
     "jira": {
       "command": "npx",
-      "args": ["-y", "@nexus2520/jira-mcp-server"],
+      "args": [
+        "-y",
+        "@nexus2520/jira-mcp-server"
+      ],
       "env": {
         "JIRA_EMAIL": "${JIRA_EMAIL}",
         "JIRA_API_TOKEN": "${JIRA_API_TOKEN}",
@@ -11,22 +61,38 @@
     },
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"],
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
       "env": {
         "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
       }
     },
     "repomix": {
       "command": "npx",
-      "args": ["-y", "repomix", "--mcp"]
+      "args": [
+        "-y",
+        "repomix",
+        "--mcp"
+      ]
     },
     "mermaid": {
       "command": "npx",
-      "args": ["-y", "mcp-mermaid"]
+      "args": [
+        "-y",
+        "mcp-mermaid"
+      ]
     },
     "excalidraw": {
       "command": "npx",
-      "args": ["-y", "mcp-excalidraw-server"]
+      "args": [
+        "-y",
+        "mcp-excalidraw-server"
+      ]
     }
+  },
+  "enabledPlugins": {
+    "ponytail@ponytail": true
   }
 }

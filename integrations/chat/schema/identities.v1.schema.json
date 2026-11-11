@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-agents.local/integrations/chat/schema/identities.v1.schema.json",
+  "title": "Chat Bridge identities v1",
+  "description": "Per-agent posting identity (ADR-0003 D9). Contains no secrets. Additive keys keep version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "suffix",
+    "default",
+    "aliases",
+    "roles"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "suffix": {
+      "description": "Fixed suffix appended to every username so an agent cannot impersonate a human or Slackbot.",
+      "const": " (agent)"
+    },
+    "default": {
+      "$ref": "#/$defs/identity"
+    },
+    "aliases": {
+      "description": "alias -> role key. Targets must exist in roles; aliases never chain (checked by the loader).",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/roleKey"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/roleKey"
+      }
+    },
+    "roles": {
+      "type": "object",
+      "description": "role key -> identity. Must contain the 15 team roles, every cavecrew-* agent in agents/ (A1) and unknown; additional roles are allowed (additive).",
+      "propertyNames": {
+        "$ref": "#/$defs/roleKey"
+      },
+      "properties": {
+        "pm": {
+          "$ref": "#/$defs/identity"
+        },
+        "po": {
+          "$ref": "#/$defs/identity"
+        },
+        "business": {
+          "$ref": "#/$defs/identity"
+        },
+        "backend": {
+          "$ref": "#/$defs/identity"
+        },
+        "frontend": {
+          "$ref": "#/$defs/identity"
+        },
+        "database": {
+          "$ref": "#/$defs/identity"
+        },
+        "data-analyst": {
+          "$ref": "#/$defs/identity"
+        },
+        "qa": {
+          "$ref": "#/$defs/identity"
+        },
+        "web-design": {
+          "$ref": "#/$defs/identity"
+        },
+        "devops": {
+          "$ref": "#/$defs/identity"
+        },
+        "reporting": {
+          "$ref": "#/$defs/identity"
+        },
+        "architect": {
+          "$ref": "#/$defs/identity"
+        },
+        "security": {
+          "$ref": "#/$defs/identity"
+        },
+        "release-manager": {
+          "$ref": "#/$defs/identity"
+        },
+        "tech-writer": {
+          "$ref": "#/$defs/identity"
+        },
+        "cavecrew-reviewer": {
+          "$ref": "#/$defs/identity"
+        },
+        "unknown": {
+          "$ref": "#/$defs/identity"
+        },
+        "cavecrew-builder": {
+          "$ref": "#/$defs/identity"
+        },
+        "cavecrew-investigator": {
+          "$ref": "#/$defs/identity"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/identity"
+      },
+      "required": [
+        "pm",
+        "po",
+        "business",
+        "backend",
+        "frontend",
+        "database",
+        "data-analyst",
+        "qa",
+        "web-design",
+        "devops",
+        "reporting",
+        "architect",
+        "security",
+        "release-manager",
+        "tech-writer",
+        "cavecrew-reviewer",
+        "cavecrew-builder",
+        "cavecrew-investigator",
+        "unknown"
+      ]
+    }
+  },
+  "$defs": {
+    "roleKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "maxLength": 40
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "display_name",
+        "icon_emoji"
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "icon_emoji": {
+          "type": "string",
+          "pattern": "^:[a-z0-9_+-]+:$"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        }
+      }
+    }
+  }
+}

@@ -12,7 +12,7 @@
   "actor": "qa",
   "redaction": {
     "applied": true,
-    "rules_version": "1.0.0",
+    "rules_version": "1.2.0",
     "truncated": false,
     "summary_dropped": true
   },
