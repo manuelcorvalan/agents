@@ -4,8 +4,9 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
 import {
-  ConfigError, DEFAULT_CONFIG_PATH, containsSecret, loadBridgeConfig, resolveSettings, resolveSpoolDir, validateConfig,
+  CHANNEL_ENV, ConfigError, DEFAULT_CONFIG_PATH, containsSecret, loadBridgeConfig, resolveSettings, resolveSpoolDir, validateConfig,
 } from '../../src/config/load-config.mjs';
+import { SENDER_ALLOWLIST, loadEnv } from '../../src/config/load-env.mjs';
 import { EXAMPLE_CONFIG_PATH, FAKE_SLACK_TOKEN, IDENTITIES_PATH, SCHEMA_DIR, makeTmpDir, readJson } from '../helpers/fixtures.mjs';
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
@@ -106,6 +107,139 @@ test('should enable live posting when config dry_run is false and env is unset',
 test('should apply defaults when optional sections are missing', () => {
   const settings = resolveSettings({ version: 1, provider: 'slack', default_channel: 'C0123456789' }, {});
   assert.deepEqual([settings.verbosity, settings.delivery.max_attempts, settings.spool.dir, settings.redaction.max_summary_chars], ['default', 5, '.chat-bridge', 500]);
+});
+
+// ---- A12: channels via .env ----
+
+const CHANNEL_ENV_VALUES = Object.freeze({
+  CHAT_BRIDGE_CHANNEL_DEFAULT: 'C0DEFAULT01',
+  CHAT_BRIDGE_CHANNEL_HANDOFF: 'C0HANDOFF01',
+  CHAT_BRIDGE_CHANNEL_AGENT_STARTED: 'C0STARTED01',
+  CHAT_BRIDGE_CHANNEL_AGENT_FINISHED: 'C0FINISHED1',
+  CHAT_BRIDGE_CHANNEL_GATE_RESULT: 'C0GATE00001',
+});
+
+test('should map each channel env key to its settings destination', () => {
+  const settings = resolveSettings(example, CHANNEL_ENV_VALUES);
+  assert.deepEqual(
+    [
+      settings.default_channel, settings.channels['handoff'], settings.channels['agent.started'],
+      settings.channels['agent.finished'], settings.channels['gate.result'],
+    ],
+    Object.values(CHANNEL_ENV_VALUES),
+  );
+});
+
+test('should keep the mapping table and event types in sync', () => {
+  assert.deepEqual(Object.values(CHANNEL_ENV), Object.keys(CHANNEL_ENV_VALUES));
+  assert.deepEqual(Object.keys(CHANNEL_ENV), ['default', 'handoff', 'agent.started', 'agent.finished', 'gate.result']);
+});
+
+test('should keep the JSON channels when the env keys are absent', () => {
+  const settings = resolveSettings(example, {});
+  assert.deepEqual([settings.default_channel, settings.channels], [example.default_channel, example.channels]);
+});
+
+test('should ignore an invalid channel env value and keep the JSON value', () => {
+  const settings = resolveSettings(example, { CHAT_BRIDGE_CHANNEL_GATE_RESULT: 'c0bad', CHAT_BRIDGE_CHANNEL_DEFAULT: 'xoxb-111111111111' });
+  assert.deepEqual([settings.channels['gate.result'], settings.default_channel], [example.channels['gate.result'], example.default_channel]);
+});
+
+test('should apply channel env overrides end-to-end through loadBridgeConfig', (t) => {
+  const dir = makeTmpDir(t);
+  const path = join(dir, 'config.json');
+  writeFileSync(path, JSON.stringify(example));
+  const { settings } = loadBridgeConfig({ env: { CHAT_BRIDGE_CONFIG: path, CHAT_BRIDGE_CHANNEL_DEFAULT: 'C0OVERRIDE1' } });
+  assert.deepEqual([settings.default_channel, settings.channels['gate.result']], ['C0OVERRIDE1', example.channels['gate.result']]);
+});
+
+test('should let a process env channel beat .env and config.json', (t) => {
+  const dir = makeTmpDir(t);
+  const configPath = join(dir, 'config.json');
+  writeFileSync(configPath, JSON.stringify(example));
+  writeFileSync(join(dir, '.env'), 'CHAT_BRIDGE_CHANNEL_GATE_RESULT=C0FROMENV01\n', { mode: 0o600 });
+  const env = loadEnv({ projectDir: dir, processEnv: { CHAT_BRIDGE_CHANNEL_GATE_RESULT: 'C0FROMPROC1' }, allowlist: SENDER_ALLOWLIST });
+  const { settings } = loadBridgeConfig({ env, configPath });
+  assert.equal(settings.channels['gate.result'], 'C0FROMPROC1');
+});
+
+test('should take a channel from .env over config.json when the process env lacks it', (t) => {
+  const dir = makeTmpDir(t);
+  const configPath = join(dir, 'config.json');
+  writeFileSync(configPath, JSON.stringify(example));
+  writeFileSync(join(dir, '.env'), 'CHAT_BRIDGE_CHANNEL_GATE_RESULT=C0FROMENV01\n', { mode: 0o600 });
+  const env = loadEnv({ projectDir: dir, processEnv: {}, allowlist: SENDER_ALLOWLIST });
+  const { settings } = loadBridgeConfig({ env, configPath });
+  assert.deepEqual([settings.channels['gate.result'], settings.default_channel], ['C0FROMENV01', example.default_channel]);
+});
+
+test('should route all five .env channel keys through loadBridgeConfig', (t) => {
+  const dir = makeTmpDir(t);
+  const configPath = join(dir, 'config.json');
+  writeFileSync(configPath, JSON.stringify(example));
+  writeFileSync(join(dir, '.env'), `${Object.entries(CHANNEL_ENV_VALUES).map(([key, value]) => `${key}=${value}`).join('\n')}\n`, { mode: 0o600 });
+  const env = loadEnv({ projectDir: dir, processEnv: {}, allowlist: SENDER_ALLOWLIST });
+  const { settings } = loadBridgeConfig({ env, configPath });
+  assert.deepEqual(
+    [
+      settings.default_channel, settings.channels['handoff'], settings.channels['agent.started'],
+      settings.channels['agent.finished'], settings.channels['gate.result'],
+    ],
+    Object.values(CHANNEL_ENV_VALUES),
+  );
+});
+
+test('should apply process env > .env > config.json for channels', (t) => {
+  const dir = makeTmpDir(t);
+  const configPath = join(dir, 'config.json');
+  writeFileSync(configPath, JSON.stringify({ ...example, channels: { ...example.channels, 'gate.result': 'C0JSON00001' } }));
+  writeFileSync(join(dir, '.env'), 'CHAT_BRIDGE_CHANNEL_GATE_RESULT=C0ENV000001\n', { mode: 0o600 });
+  const fromProcess = loadEnv({ projectDir: dir, processEnv: { CHAT_BRIDGE_CHANNEL_GATE_RESULT: 'C0PROC00001' }, allowlist: SENDER_ALLOWLIST });
+  const fromFile = loadEnv({ projectDir: dir, processEnv: {}, allowlist: SENDER_ALLOWLIST });
+  const channel = (env) => loadBridgeConfig({ env, configPath }).settings.channels['gate.result'];
+  assert.deepEqual([channel(fromProcess), channel(fromFile), channel({})], ['C0PROC00001', 'C0ENV000001', 'C0JSON00001']);
+});
+
+test('should keep every JSON channel when .env defines only one channel key', (t) => {
+  const dir = makeTmpDir(t);
+  const configPath = join(dir, 'config.json');
+  writeFileSync(configPath, JSON.stringify({ ...example, channels: { ...example.channels, 'agent.started': 'C0JSONSTART' } }));
+  writeFileSync(join(dir, '.env'), 'CHAT_BRIDGE_CHANNEL_HANDOFF=C0FROMENV01\n', { mode: 0o600 });
+  const env = loadEnv({ projectDir: dir, processEnv: {}, allowlist: SENDER_ALLOWLIST });
+  const { settings } = loadBridgeConfig({ env, configPath });
+  assert.deepEqual(
+    [settings.channels['handoff'], settings.channels['gate.result'], settings.channels['agent.started'], settings.default_channel],
+    ['C0FROMENV01', example.channels['gate.result'], 'C0JSONSTART', example.default_channel],
+  );
+});
+
+// Backend's declared deviation: loadEnv does not validate process env values, so an invalid
+// exported channel reaches resolveSettings, which ignores it and keeps the JSON value.
+// It does not fall back to a valid .env value.
+test('should keep the JSON channel when the process env value is invalid', (t) => {
+  const dir = makeTmpDir(t);
+  const configPath = join(dir, 'config.json');
+  writeFileSync(configPath, JSON.stringify(example));
+  writeFileSync(join(dir, '.env'), 'CHAT_BRIDGE_CHANNEL_GATE_RESULT=C0ENV000001\n', { mode: 0o600 });
+  const env = loadEnv({ projectDir: dir, processEnv: { CHAT_BRIDGE_CHANNEL_GATE_RESULT: 'c0bad' }, allowlist: SENDER_ALLOWLIST });
+  const { settings } = loadBridgeConfig({ env, configPath });
+  assert.deepEqual(
+    [env.CHAT_BRIDGE_CHANNEL_GATE_RESULT, settings.channels['gate.result']],
+    ['c0bad', example.channels['gate.result']],
+  );
+});
+
+test('should still require default_channel in config.json when an env override exists', (t) => {
+  const dir = makeTmpDir(t);
+  const configPath = join(dir, 'config.json');
+  const { default_channel: _unused, ...withoutDefault } = example;
+  writeFileSync(configPath, JSON.stringify(withoutDefault));
+  assert.throws(
+    () => loadBridgeConfig({ configPath, env: { CHAT_BRIDGE_CHANNEL_DEFAULT: 'C0ENVDEFAULT' } }),
+    (error) => error instanceof ConfigError
+      && error.code === 'config_invalid'
+      && error.details.some((detail) => detail.includes('default_channel')),
+  );
 });
 
 test('should load config from CHAT_BRIDGE_CONFIG when set', (t) => {

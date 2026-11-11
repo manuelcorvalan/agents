@@ -12,6 +12,15 @@ export const DEFAULT_CONFIG_PATH = join(PACKAGE_DIR, 'config', 'config.json');
 export const DEFAULT_IDENTITIES_PATH = join(PACKAGE_DIR, 'config', 'identities.json');
 
 export const CHANNEL_ID = /^[CDG][A-Z0-9]{8,}$/;
+
+// A12: one source of truth for the `.env` key -> settings destination mapping.
+export const CHANNEL_ENV = Object.freeze({
+  default: 'CHAT_BRIDGE_CHANNEL_DEFAULT',
+  handoff: 'CHAT_BRIDGE_CHANNEL_HANDOFF',
+  'agent.started': 'CHAT_BRIDGE_CHANNEL_AGENT_STARTED',
+  'agent.finished': 'CHAT_BRIDGE_CHANNEL_AGENT_FINISHED',
+  'gate.result': 'CHAT_BRIDGE_CHANNEL_GATE_RESULT',
+});
 const ROLE_KEY = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const ICON_EMOJI = /^:[a-z0-9_+-]+:$/;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -192,12 +201,22 @@ export function resolveSettings(config, env = {}) {
   if (env.CHAT_BRIDGE_DRY_RUN === 'false') isDryRun = false;
   else if (env.CHAT_BRIDGE_DRY_RUN === 'true') isDryRun = true;
   const redaction = { ...DEFAULT_REDACTION, ...(config.redaction ?? {}) };
+  // A12: channel overrides land after JSON validation; an invalid value keeps the JSON one.
+  const channels = { ...(config.channels ?? {}) };
+  for (const type of EVENT_TYPES) {
+    const value = env[CHANNEL_ENV[type]];
+    if (typeof value === 'string' && CHANNEL_ID.test(value)) channels[type] = value;
+  }
+  const envDefaultChannel = env[CHANNEL_ENV.default];
+  const defaultChannel = typeof envDefaultChannel === 'string' && CHANNEL_ID.test(envDefaultChannel)
+    ? envDefaultChannel
+    : config.default_channel;
   return {
     provider: config.provider,
     dry_run: isDryRun,
     verbosity: config.verbosity ?? 'default',
-    default_channel: config.default_channel,
-    channels: { ...(config.channels ?? {}) },
+    default_channel: defaultChannel,
+    channels,
     redaction,
     extraPatterns: compileExtraPatterns(redaction.extra_patterns),
     delivery: { ...DEFAULT_DELIVERY, ...(config.delivery ?? {}) },

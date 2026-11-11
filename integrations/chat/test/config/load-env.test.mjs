@@ -76,6 +76,63 @@ test('should load SLACK_BOT_TOKEN with the sender allowlist', (t) => {
   assert.equal(load(dir).env.SLACK_BOT_TOKEN, ENV_TOKEN);
 });
 
+const CHANNEL_KEYS = [
+  'CHAT_BRIDGE_CHANNEL_DEFAULT', 'CHAT_BRIDGE_CHANNEL_HANDOFF', 'CHAT_BRIDGE_CHANNEL_AGENT_STARTED',
+  'CHAT_BRIDGE_CHANNEL_AGENT_FINISHED', 'CHAT_BRIDGE_CHANNEL_GATE_RESULT',
+];
+
+test('should keep the channel keys in the sender allowlist and out of the emitter allowlist', () => {
+  assert.deepEqual(
+    [CHANNEL_KEYS.every((key) => SENDER_ALLOWLIST.includes(key)), CHANNEL_KEYS.some((key) => EMITTER_ALLOWLIST.includes(key))],
+    [true, false],
+  );
+});
+
+test('should load all five channel keys from .env with the sender allowlist', (t) => {
+  const dir = project(t, CHANNEL_KEYS.map((key) => `${key}=C0CGVFK33FB\n`).join(''));
+  assert.deepEqual(Object.keys(load(dir).env), CHANNEL_KEYS);
+});
+
+test('should ignore the channel keys with the emitter allowlist', (t) => {
+  const dir = project(t, 'CHAT_BRIDGE_CHANNEL_DEFAULT=C0CGVFK33FB\n');
+  assert.deepEqual(loadEnv({ projectDir: dir, processEnv: {}, allowlist: EMITTER_ALLOWLIST }), {});
+});
+
+test('should drop invalid channel values and log env_bad_value with the key name only', (t) => {
+  const dir = project(t, 'CHAT_BRIDGE_CHANNEL_DEFAULT=C123\nCHAT_BRIDGE_CHANNEL_HANDOFF=c0cgvfk33fb\nCHAT_BRIDGE_CHANNEL_AGENT_STARTED=xoxb-111111111111\nCHAT_BRIDGE_CHANNEL_AGENT_FINISHED=\nCHAT_BRIDGE_CHANNEL_GATE_RESULT=C0CGVFK33FB\n');
+  const { env, logs } = load(dir);
+  assert.deepEqual([env, logs], [
+    { CHAT_BRIDGE_CHANNEL_GATE_RESULT: 'C0CGVFK33FB' },
+    [
+      'env_bad_value:CHAT_BRIDGE_CHANNEL_DEFAULT',
+      'env_bad_value:CHAT_BRIDGE_CHANNEL_HANDOFF',
+      'env_bad_value:CHAT_BRIDGE_CHANNEL_AGENT_STARTED',
+      'env_bad_value:CHAT_BRIDGE_CHANNEL_AGENT_FINISHED',
+    ],
+  ]);
+});
+
+test('should log env_bad_value at warn level with the key only and never the value', (t) => {
+  const dir = project(t, 'CHAT_BRIDGE_CHANNEL_DEFAULT=U0SENTINELVALUE\nCHAT_BRIDGE_CHANNEL_HANDOFF=SENTINELVALUE2\nCHAT_BRIDGE_CHANNEL_GATE_RESULT=\n');
+  const logs = [];
+  const env = loadEnv({ projectDir: dir, processEnv: {}, allowlist: SENDER_ALLOWLIST, log: (level, code) => logs.push([level, code]) });
+  assert.deepEqual([env, logs], [
+    {},
+    [
+      ['warn', 'env_bad_value:CHAT_BRIDGE_CHANNEL_DEFAULT'],
+      ['warn', 'env_bad_value:CHAT_BRIDGE_CHANNEL_HANDOFF'],
+      ['warn', 'env_bad_value:CHAT_BRIDGE_CHANNEL_GATE_RESULT'],
+    ],
+  ]);
+  const serialized = JSON.stringify(logs);
+  assert.deepEqual(['U0SENTINELVALUE', 'SENTINELVALUE2'].filter((value) => serialized.includes(value)), []);
+});
+
+test('should accept a channel value that the .env parser trims around spaces', (t) => {
+  const dir = project(t, 'CHAT_BRIDGE_CHANNEL_DEFAULT= C0CGVFK33FB \n');
+  assert.deepEqual(load(dir).env, { CHAT_BRIDGE_CHANNEL_DEFAULT: 'C0CGVFK33FB' });
+});
+
 test('should never offer the token through resolveEmitterEnv', (t) => {
   const dir = project(t, `SLACK_BOT_TOKEN=${ENV_TOKEN}\nCHAT_BRIDGE_ENABLED=true\n`);
   const { env, isEnabled } = resolveEmitterEnv({ CLAUDE_PROJECT_DIR: dir });
@@ -175,6 +232,26 @@ const VALUE_CASES = [
   ['SLACK_BOT_TOKEN', ENV_TOKEN, ENV_TOKEN],
   ['SLACK_BOT_TOKEN', ['xoxp', '1234567890-abc'].join('-'), undefined],
   ['SLACK_BOT_TOKEN', 'xoxb-short', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'C0CGVFK33FB', 'C0CGVFK33FB'],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'C123', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'c0cgvfk33fb', undefined],
+  ['CHAT_BRIDGE_CHANNEL_HANDOFF', 'G0ABCDEFGHI', 'G0ABCDEFGHI'],
+  ['CHAT_BRIDGE_CHANNEL_HANDOFF', ENV_TOKEN, undefined],
+  ['CHAT_BRIDGE_CHANNEL_HANDOFF', '', undefined],
+  ['CHAT_BRIDGE_CHANNEL_AGENT_STARTED', 'D0123456789', 'D0123456789'],
+  ['CHAT_BRIDGE_CHANNEL_AGENT_STARTED', 'x0cgvfk33fb', undefined],
+  ['CHAT_BRIDGE_CHANNEL_AGENT_FINISHED', 'C0CGVFK33FB', 'C0CGVFK33FB'],
+  ['CHAT_BRIDGE_CHANNEL_AGENT_FINISHED', 'C0CGVFK3', undefined],
+  ['CHAT_BRIDGE_CHANNEL_GATE_RESULT', 'C0CGVFK33FB', 'C0CGVFK33FB'],
+  ['CHAT_BRIDGE_CHANNEL_GATE_RESULT', 'xoxb-111111111111', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'U0ABCDEFGHI', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', '#general', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'C1234567', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'C', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', '', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', ' C0CGVFK33FB', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'C0CGVFK33FB ', undefined],
+  ['CHAT_BRIDGE_CHANNEL_DEFAULT', 'C0CGVFK33FB\t', undefined],
   ['OTHER_KEY', 'x', undefined],
 ];
 

@@ -15,6 +15,8 @@ import { FAKE_SLACK_TOKEN, PACKAGE_DIR } from '../helpers/fixtures.mjs';
 const EMIT_BIN = join(PACKAGE_DIR, 'bin', 'chat-emit.mjs');
 const PRELOAD = pathToFileURL(join(PACKAGE_DIR, 'test', 'helpers', 'no-network-preload.mjs')).href;
 const HOOK_BUDGET_MS = 2000;
+// config.example.json default_channel; handoff has no channels[] entry, so it routes there.
+const DEFAULT_CHANNEL = 'C0000000000';
 const HANDOFF = JSON.stringify({
   session_id: 'e2e-session', hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_use_id: 'toolu_e2e',
   tool_input: { subagent_type: 'qa', description: 'Verify US-005', prompt: 'PROMPT-MUST-NOT-LEAK' },
@@ -103,7 +105,7 @@ test('should exit 0 within 2 s with zero stdout while the detached sender meets 
     [0, 0, true, true, true],
     `hook ${hook.ms.toFixed(0)}ms`,
   );
-  assert.deepEqual(readLines(fetchLog), [{ url: SLACK_ENDPOINT, bearer: true }]);
+  assert.deepEqual(readLines(fetchLog), [{ url: SLACK_ENDPOINT, bearer: true, channel: DEFAULT_CHANNEL }]);
   assert.deepEqual(deadLetters.map((entry) => [entry.reason, entry.error_code, entry.attempts]), [['max_attempts', 'network_error', 1]]);
   // US-009: token never in argv, spool, logs or dead-letter.
   if (process.platform === 'linux') assert.match(sender.cmdline, /chat-send\.mjs/);
@@ -173,7 +175,7 @@ test('should configure the whole pipeline from <project>/.env only; the token re
   const hook = await runHook({ CLAUDE_PROJECT_DIR: env.CLAUDE_PROJECT_DIR, CHAT_BRIDGE_TEST_FETCH_LOG: fetchLog }, HANDOFF);
   const sender = await awaitSender(spoolDir);
   assert.deepEqual([hook.code, hook.stdout.length, hook.ms < HOOK_BUDGET_MS, sender.finished], [0, 0, true, true]);
-  assert.deepEqual(readLines(fetchLog), [{ url: SLACK_ENDPOINT, bearer: true }]);
+  assert.deepEqual(readLines(fetchLog), [{ url: SLACK_ENDPOINT, bearer: true, channel: DEFAULT_CHANNEL }]);
   if (process.platform === 'linux') {
     // Emitter never loads SLACK_BOT_TOKEN, so it is absent from the spawned sender's env and argv.
     assert.ok(!sender.environ.includes(FAKE_SLACK_TOKEN), 'token passed through spawn env');

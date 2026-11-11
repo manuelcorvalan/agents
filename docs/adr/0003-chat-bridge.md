@@ -501,9 +501,31 @@ The QA corpus must cover each addition. Redaction may only get stricter without 
 | Owner-bound gate attribution (A8) not yet implemented | medium: spoofable gate posts (M3) | S | Backend + QA, before F2 |
 | `SubagentHandback` coupling to transcript format | medium: silent fallback if format changes | S | keep the fallback chain; contract test with a fixture transcript |
 
+**A12. Canales por `.env` (amends D10 "Environment overrides" and D15 allowlist table; signed contract).** Numbering note: A9 is already taken by "Receipt archive locations", so this amendment is A12. User decision: channels are configurable through `.env` (**Option A**). **Per-agent routing (Option B) is excluded from scope.** It is not signed here and must not be implemented without a new amendment.
+
+Five new optional keys. Each maps to one `settings` field:
+
+| `.env` key | Destination |
+|---|---|
+| `CHAT_BRIDGE_CHANNEL_DEFAULT` | `settings.default_channel` |
+| `CHAT_BRIDGE_CHANNEL_HANDOFF` | `settings.channels['handoff']` |
+| `CHAT_BRIDGE_CHANNEL_AGENT_STARTED` | `settings.channels['agent.started']` |
+| `CHAT_BRIDGE_CHANNEL_AGENT_FINISHED` | `settings.channels['agent.finished']` |
+| `CHAT_BRIDGE_CHANNEL_GATE_RESULT` | `settings.channels['gate.result']` |
+
+- **Validation:** same `CHANNEL_ID` regex as `src/config/load-config.mjs`: `^[CDG][A-Z0-9]{8,}$`. An invalid value discards the key and logs `warn env_bad_value:<KEY>` through the existing path (`load-env.mjs:131`). **Not fatal:** the bridge keeps the `config.json` value.
+- **Precedence:** process env > `.env` > `config.json`. A key absent from `.env` leaves the JSON value untouched.
+- **Allowlist:** the five keys go in `SENDER_ALLOWLIST` only, never in `EMITTER_ALLOWLIST`. The hook emitter does not route channels, so it does not need them. Same criterion as `SLACK_BOT_TOKEN`.
+- **Applied after `config.json` validation.** The schema does not change: `default_channel` stays required in the JSON, and `channels` still admits only the four event types.
+- **`version` stays 1.** Additive change.
+- **D7 does not apply.** These values are channel ids, not secrets.
+
+What does not change: the config schema, the required fields, the event types, the precedence of process env over `.env`, `dry_run`, and the D7 redaction/secret scan. Option B (routing by agent) stays out of scope.
+
 ## Change log
 
 - **2026-11-11:** Jira link-back removed from scope by user decision.
 - **2026-11-11:** Amendments A1–A7, D15 (`.env` loader) and D16 (config location/VCS) accepted after the F1 implementation review.
 - **2026-11-11:** Amendments A8 (owner-bound gate attribution, Security M3), A4-c (`outcome` enum `success|error|unknown`), A9 (receipt archive locations) and A10 (bare-URL residual risk, defang before F3) accepted after the F1 review and security gate.
 - **2026-11-11:** Re-review follow-ups: `release` removed from F1 `GATE_OWNERS` (release gate deferred to F2); A6 addendum `RULES_VERSION` 1.2.0 (M1 and M2); A11 spool parent check by `realpath` (L2).
+- **2026-11-11:** A12 (channels via `.env`, Option A) signed; per-agent routing (Option B) excluded from scope.

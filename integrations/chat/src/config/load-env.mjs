@@ -4,6 +4,7 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import * as util from 'node:util';
+import { CHANNEL_ID } from './load-config.mjs';
 
 export const MAX_ENV_BYTES = 16 * 1024;
 const MAX_PATH_CHARS = 1024;
@@ -14,7 +15,16 @@ const SLACK_BOT_TOKEN_VALUE = /^xoxb-[A-Za-z0-9-]{10,250}$/;
 export const EMITTER_ALLOWLIST = Object.freeze([
   'CHAT_BRIDGE_ENABLED', 'CHAT_BRIDGE_DRY_RUN', 'CHAT_BRIDGE_CONFIG', 'CHAT_BRIDGE_SPOOL_DIR',
 ]);
-export const SENDER_ALLOWLIST = Object.freeze([...EMITTER_ALLOWLIST, 'SLACK_BOT_TOKEN']);
+// A12: channel keys are sender-only; the hook emitter does not route channels.
+export const SENDER_ALLOWLIST = Object.freeze([
+  ...EMITTER_ALLOWLIST,
+  'SLACK_BOT_TOKEN',
+  'CHAT_BRIDGE_CHANNEL_DEFAULT',
+  'CHAT_BRIDGE_CHANNEL_HANDOFF',
+  'CHAT_BRIDGE_CHANNEL_AGENT_STARTED',
+  'CHAT_BRIDGE_CHANNEL_AGENT_FINISHED',
+  'CHAT_BRIDGE_CHANNEL_GATE_RESULT',
+]);
 
 function isSafePath(value) {
   return value.length > 0 && value.length <= MAX_PATH_CHARS && !CONTROL_IN_PATH.test(value);
@@ -36,6 +46,12 @@ export function validateEnvValue(key, value, projectDir) {
       return isSafePath(value) && isAbsolute(value) ? value : undefined;
     case 'SLACK_BOT_TOKEN':
       return SLACK_BOT_TOKEN_VALUE.test(value) ? value : undefined;
+    case 'CHAT_BRIDGE_CHANNEL_DEFAULT':
+    case 'CHAT_BRIDGE_CHANNEL_HANDOFF':
+    case 'CHAT_BRIDGE_CHANNEL_AGENT_STARTED':
+    case 'CHAT_BRIDGE_CHANNEL_AGENT_FINISHED':
+    case 'CHAT_BRIDGE_CHANNEL_GATE_RESULT':
+      return CHANNEL_ID.test(value) ? value : undefined;
     default:
       return undefined;
   }
