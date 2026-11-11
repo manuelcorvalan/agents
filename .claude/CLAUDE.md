@@ -264,3 +264,7 @@ Coordinate with the Database agent (use `task` with `subagent_type="database"`) 
 
 Report back with: implemented code paths, API documentation, and coordination summary with Database.
 ```
+
+# graphify
+- **graphify** (`.claude/skills/graphify/SKILL.md`) - any input to knowledge graph. Trigger: `/graphify`
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.

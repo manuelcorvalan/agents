@@ -15,6 +15,7 @@ En OpenCode podés elegir el motor de modelos: **[DeepSeek](#opción-a--deepseek
   - **Claude Code**: CLI de [Claude Code](https://claude.ai/code) instalado y autenticado (`npm i -g @anthropic-ai/claude-code` + `claude login`) — sin API key, usa tu suscripción
 - [RTK](https://github.com/rtk-ai/rtk) — comprime output de comandos bash (~60-90% menos tokens)
 - [CodeGraph](https://github.com/colbymchenry/codegraph) — índice de código local para agentes técnicos
+- [Graphify](https://github.com/Graphify-Labs/graphify) (opcional) — grafo de conocimiento del repo; ver [§ Graphify](#graphify--grafo-de-conocimiento-del-código)
 - [direnv](https://direnv.net) (recomendado para cargar variables de entorno automáticamente)
 - Plugins opcionales: [ponytail](https://github.com/DietrichGebert/ponytail) y [caveman](https://github.com/JuliusBrussee/caveman) — ver [Plugins](#plugins-opcional)
 
@@ -25,6 +26,7 @@ En OpenCode podés elegir el motor de modelos: **[DeepSeek](#opción-a--deepseek
 - Token de API de [Atlassian](https://id.atlassian.com/manage/api-tokens) (para integración Jira)
 - [RTK](https://github.com/rtk-ai/rtk) — hook PreToolUse que comprime output de bash
 - [CodeGraph](https://github.com/colbymchenry/codegraph) — índice de código local para agentes técnicos
+- [Graphify](https://github.com/Graphify-Labs/graphify) (opcional) — grafo de conocimiento del repo; ver [§ Graphify](#graphify--grafo-de-conocimiento-del-código)
 - [direnv](https://direnv.net) (recomendado)
 
 ## Instalación — OpenCode
@@ -62,6 +64,10 @@ npx -y github:JuliusBrussee/caveman -- --only opencode
 npm i -g @colbymchenry/codegraph      # o: curl -fsSL .../install.sh | sh
 codegraph install -t opencode,claude -l global -y   # wire MCP en ambas plataformas
 
+# Graphify — grafo de conocimiento persistente del repo (ver § Graphify)
+uv tool install graphifyy            # CLI `graphify` (PyPI: graphifyy)
+cd /ruta/a/tu-proyecto && graphify install --project   # registra la skill en el proyecto
+
 # Indexar un proyecto (una vez por proyecto; auto-sync después)
 cd /ruta/a/tu-proyecto
 codegraph init
@@ -69,6 +75,7 @@ codegraph init
 
 > **RTK** intercepta y reescribe comandos (`git status` → `rtk git status`) reduciendo el output que el agente lee. Instalado global, beneficia a todos los agentes.
 > **CodeGraph** construye un knowledge graph del proyecto (símbolos, call paths, blast radius). Indexá cada proyecto donde trabajen los agentes técnicos.
+> **Graphify** construye un grafo persistente (`graphify-out/graph.json`) que se consulta por CLI y skill. Es complementario a CodeGraph, no un reemplazo — ver [§ Graphify](#graphify--grafo-de-conocimiento-del-código).
 > **ponytail / caveman** son opcionales: `bin/factory-init <proyecto> --with-plugins` los detecta e instala por vos.
 
 > **Alternativa:** en lugar de symlinks, podés clonar el repo directamente dentro del directorio de tu proyecto y correr `opencode init` desde ahí. OpenCode detecta `agents/` y `commands/` locales automáticamente.
@@ -92,7 +99,7 @@ direnv allow .
 
 > **Importante:** la carpeta `.claude/` debe estar dentro del directorio de trabajo de tu proyecto para que Claude Code la detecte. Las definiciones canónicas viven en `agents/` (single source of truth); `.claude/agents/` contiene solo **wrappers mínimos** que registran cada subagente y apuntan al archivo canónico (`agents/<rol>.md`) — las definiciones **no se duplican**. El orquestador PM de Claude Code lee las definiciones canónicas directamente desde `agents/`.
 
-> Las herramientas de optimización de tokens (RTK + CodeGraph) se instalan una sola vez, en **ambas plataformas** — ver sección **Herramientas de optimización de tokens** más arriba.
+> Las herramientas de optimización de tokens (RTK + CodeGraph + Graphify) se instalan una sola vez, en **ambas plataformas** — ver sección **Herramientas de optimización de tokens** más arriba.
 
 ## Variables de entorno
 
@@ -347,6 +354,80 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend, QA, Architect,
 > **Importante:** los agentes de OpenCode se configuran vía `opencode.json` (o `opencode.jsonc`) a nivel proyecto y global (`~/.config/opencode/opencode.json`). OpenCode no lee `config.json` en ninguna ruta.
 > **Modo symlink:** para enforcement global (agentes en `~/.config/opencode`), espejar el bloque de permisos en `~/.config/opencode/opencode.json`.
 
+## Graphify — grafo de conocimiento del código
+
+[Graphify](https://github.com/Graphify-Labs/graphify) convierte el repo en un grafo persistente: nodos = archivos, símbolos y comunidades; aristas = relaciones entre ellos. Se usa como CLI (`graphify`) y como skill instalada en el proyecto: `/graphify .` construye el grafo y `graphify query|path|explain` lo consultan.
+
+### Instalación
+
+```bash
+uv tool install graphifyy            # instala el CLI `graphify` (PyPI: graphifyy)
+graphify install --project           # registra la skill en el repo actual
+```
+
+`graphify install --project` escribe:
+
+- `.claude/skills/graphify/` — skill para Claude Code.
+- `.opencode/skills/graphify/` + `.opencode/plugins/graphify.js` — skill y plugin para OpenCode (`.opencode/` está gitignoreado).
+- Reglas "always-on" en `CLAUDE.md` y `AGENTS.md` de la raíz, y el registro de la skill en `.claude/CLAUDE.md`.
+
+Con `--strict` el primer `Read`/`Grep` crudo de cada sesión queda bloqueado hasta que el agente se oriente con `graphify query` (solo hooks de proyecto de Claude Code).
+
+También se puede hacer al inicializar un proyecto:
+
+```bash
+bin/factory-init <proyecto> --with-graphify
+```
+
+Ese flag instala el CLI si falta, corre `graphify install --project` y agrega `graphify-out/` al `.gitignore` del proyecto.
+
+### Uso
+
+```bash
+# Construir el grafo del repo (skill; se refresca después)
+/graphify .
+
+# Consultar
+graphify query "¿cómo se elige el modelo de cada agente?"
+graphify path "agents/pm.md" "bin/factory-init"
+graphify explain "chat bridge"
+
+# Refrescar tras cambios de código (AST-only, sin costo de API)
+graphify update .
+```
+
+`query`, `path` y `explain` devuelven un subgrafo acotado, normalmente mucho más chico que un `grep` completo o que `GRAPH_REPORT.md`. Conviene correrlos **antes** del primer `grep`/`Read` cuando la pregunta es sobre el código: la regla está en `AGENTS.md`/`CLAUDE.md` y hay que repetirla en el prompt de cada subagente que explore.
+
+### Salida
+
+`graphify-out/` está gitignoreado y se regenera con `graphify update .`:
+
+| Archivo | Contenido |
+|---|---|
+| `graph.json` | Grafo persistente: nodos, aristas, comunidades. Lo consumen `query`, `path` y `explain`. |
+| `GRAPH_REPORT.md` | Reporte de auditoría en lenguaje natural: god nodes, comunidades, hallazgos. |
+| `graph.html` | Grafo interactivo para abrir en el navegador. |
+
+Opcional: `graphify export wiki` genera artículos markdown en `graphify-out/wiki/`. Si existe `wiki/index.md`, sirve para navegación amplia en lugar de leer el código fuente.
+
+### Privacidad
+
+El código se parsea **localmente** con tree-sitter: no hay LLM, no consume API y nada sale de la máquina. Solo documentación, PDFs o imágenes necesitan un backend de extracción (DeepSeek se autodetecta vía `DEEPSEEK_API_KEY`). Graphify no registra un MCP: es CLI + skill.
+
+### Graphify y CodeGraph
+
+Los dos construyen grafos de código, pero no se reemplazan:
+
+| | CodeGraph | Graphify |
+|---|---|---|
+| Superficie | MCP: tool `codegraph_explore` | CLI `graphify` + skill `/graphify` |
+| Índice | Pre-computado por `codegraph init`, con auto-sync | `graphify-out/graph.json`, se refresca con `graphify update .` |
+| Consulta | Una llamada de exploración (símbolos, call paths, blast radius) | `query` / `path` / `explain` sobre el grafo persistente |
+| Extra | — | `GRAPH_REPORT.md`, `graph.html`, wiki opcional |
+| Permisos | `permission.codegraph_*` por agente | Reglas en `AGENTS.md` / `CLAUDE.md`; sin permisos MCP |
+
+Regla práctica: CodeGraph responde "¿dónde está y qué rompe?" para un agente técnico; Graphify sirve para orientación amplia del repo, rutas entre símbolos y contexto de arquitectura. Si no existe `graphify-out/graph.json`, los agentes siguen con CodeGraph, `grep` y lectura directa.
+
 ## MCP — Context7 (docs actualizadas)
 
 [Context7](https://github.com/upstash/context7) expone `resolve-library-id` y `query-docs`: trae documentación y ejemplos **actualizados y versionados** de cualquier librería directo al contexto del agente. Elimina APIs alucinadas y loops de retry — menos tokens y menos errores.
@@ -417,7 +498,7 @@ Habilitados para **Architect**, **Web Design**, **PO**, **PM** y (mermaid) **Tec
 
 ## Optimización de tokens
 
-Seis capas reducen el consumo de tokens, cada una dirigida al agente que más le aprovecha:
+Siete capas reducen el consumo de tokens, cada una dirigida al agente que más le aprovecha:
 
 | Herramienta | Agentes | Qué comprime | Beneficio |
 |---|---|---|---|
@@ -425,6 +506,7 @@ Seis capas reducen el consumo de tokens, cada una dirigida al agente que más le
 | **ponytail** | Todos (global, opcional) | Alcance del código: escribe menos líneas y menos archivos | ~53% menos código, ~45% menos tokens |
 | **RTK** | Todos (global) | Output de comandos bash (`git status`, `grep`, `cat`, tests...) | ~60-90% menos tokens |
 | **CodeGraph** | Backend, Frontend, QA, Architect, Database, Data Analyst, Security | Tool calls de exploración de código (call paths, blast radius en 1 llamada) | 69% menos tokens, ~60% menos costo |
+| **Graphify** | Todos (opcional, previo a explorar) | Exploración de código: subgrafo acotado en vez de `grep`/`Read` | Menos tool calls de lectura |
 | **Context7** | Backend, Frontend, Database, DevOps, Architect, QA, Security | Docs de librerías en vez de APIs alucinadas → menos loops de retry | Menos iteraciones y errores |
 | **Repomix** | Architect, Technical Writer, PM | Exploración archivo-por-archivo → un solo archivo empaquetado | Menos tool calls de lectura |
 
@@ -435,6 +517,7 @@ Detalles por herramienta:
 - **RTK** — instalado global, reescribe comandos de bash a sus equivalentes comprimidos antes de que el output entre al contexto. No requiere configuración por agente.
 - **CodeGraph** — los agentes técnicos consultan el grafo (`codegraph_explore`) antes de modificar código, evitando loops de grep/read. Configurado en `agents/backend.md`, `agents/frontend.md`, `agents/qa.md`, `agents/architect.md`, `agents/database.md`, `agents/data-analyst.md`, `agents/security.md`. Permisos restringidos vía `permission.codegraph_*` en `opencode.json` (deny para el resto de agentes).
 - **Context7** — los agentes técnicos consultan docs versionadas (`query-docs`) en vez de inventar APIs. Configurado en los `agents/*.md` técnicos y restringido vía `permission.context7_*`.
+- **Graphify** — grafo persistente del repo. Los agentes lo consultan con `query`/`path`/`explain` antes de grepear cuando `graphify-out/graph.json` existe. Ver [§ Graphify](#graphify--grafo-de-conocimiento-del-código).
 - **Repomix** — empaqueta el repo en un archivo para planificar sin explorar. Configurado para Architect/Technical Writer/PM y restringido vía `permission.repomix_*`.
 
 ## Plugins (opcional)
@@ -459,6 +542,7 @@ bin/factory-init <proyecto> --with-plugins
 - **caveman en OpenCode**: el instalador oficial rechaza escribir sobre directorios symlinkeados (y `factory-init` symlinkea `~/.config/opencode/commands`). `factory-init --with-caveman` lo instala en un directorio temporal y mergea el resultado: plugin + skills + `AGENTS.md` a `~/.config/opencode/`, y los `/caveman-*` a `commands/` del repo (así quedan versionados y llegan a todos los proyectos por el symlink). OpenCode autocarga `~/.config/opencode/plugins/*`, no hace falta tocar `opencode.json`.
 - **Claude Code**: `ponytail@ponytail` se declara además en `enabledPlugins` de `.claude/settings.json`; el plugin de caveman se instala con los dos comandos de arriba.
 - **Desinstalar**: `opencode plugin remove <paquete>` / `/plugin uninstall ponytail@ponytail`; caveman: `npx -y github:JuliusBrussee/caveman -- --uninstall`.
+- **Graphify no es un plugin**: es CLI + skill. Se instala con `uv tool install graphifyy` + `graphify install --project`, o con `bin/factory-init <proyecto> --with-graphify`. Ver [§ Graphify](#graphify--grafo-de-conocimiento-del-código).
 
 ## Comandos
 
@@ -622,6 +706,7 @@ opencode-agents/
 ├── STANDARDS.md            # DoD/DoR/convenciones/gates (fuente de verdad de calidad)
 ├── opencode.json           # Provider DeepSeek + MCP + permisos por agente (OpenCode)
 ├── .codegraph/             # Índice CodeGraph (generado por `codegraph init`, no versionado)
+├── graphify-out/           # Grafo Graphify (generado por `/graphify .`, no versionado)
 ├── PRD.md                  # Documento de visión del producto
 └── README.md
 ```

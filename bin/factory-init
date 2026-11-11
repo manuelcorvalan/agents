@@ -4,7 +4,7 @@
 # =============================================================================
 # Usage:
 #   factory-init <project-path> [--dry-run] [--with-plugins]
-#                [--with-ponytail] [--with-caveman] [--with-rtk]
+#                [--with-ponytail] [--with-caveman] [--with-rtk] [--with-graphify]
 #
 # What it does:
 #   1. Symlinks this factory's agents/   -> ~/.config/opencode/agents
@@ -15,6 +15,8 @@
 #   4. Runs `codegraph init` inside the project if the codegraph CLI exists.
 #   5. Installs optional plugins (ponytail, caveman, RTK) when requested
 #      with --with-plugins (or the per-plugin flags). Skips what is missing.
+#   6. Registers graphify (knowledge graph) via `graphify install --project`
+#      when requested with --with-graphify. Skips if the CLI is missing.
 #
 # Claude Code alternative (NOT symlinked into ~/.config):
 #   ln -s <factory-root>/.claude  <project>/.claude
@@ -38,11 +40,13 @@ DRY_RUN=0
 WITH_PONYTAIL=0
 WITH_CAVEMAN=0
 WITH_RTK=0
+WITH_GRAPHIFY=0
 
 usage() {
   cat <<'EOF'
 Usage: factory-init <project-path> [--dry-run] [--with-plugins]
                                [--with-ponytail] [--with-caveman] [--with-rtk]
+                               [--with-graphify]
 
 Scaffold <project-path> to use the opencode-agents software factory.
 
@@ -52,11 +56,13 @@ Scaffold <project-path> to use the opencode-agents software factory.
   --with-ponytail  Install ponytail (OpenCode + Claude Code).
   --with-caveman   Install caveman (OpenCode + Claude Code).
   --with-rtk       Wire RTK for OpenCode and Claude Code.
+  --with-graphify  Register graphify skill (knowledge graph).
 
 Examples:
   factory-init ~/code/my-app
   factory-init ~/code/my-app --with-plugins
   factory-init ~/code/my-app --dry-run --with-ponytail
+  factory-init ~/code/my-app --with-graphify
 EOF
 }
 
@@ -74,6 +80,7 @@ for a in "$@"; do
     --with-ponytail) WITH_PONYTAIL=1 ;;
     --with-caveman) WITH_CAVEMAN=1 ;;
     --with-rtk) WITH_RTK=1 ;;
+    --with-graphify) WITH_GRAPHIFY=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) usage; exit 1 ;;
     *) [[ -n "$PROJECT" ]] && { usage; exit 1; }; PROJECT="$a" ;;
@@ -232,6 +239,31 @@ if [[ $WITH_RTK -eq 1 ]]; then
     if command -v claude >/dev/null 2>&1; then run_soft rtk init -g; fi
   else
     warn "rtk no encontrado — instalalo con: brew install rtk (o cargo install rtk)"
+  fi
+fi
+
+if [[ $WITH_GRAPHIFY -eq 1 ]]; then
+  log "== Graphify =="
+  if command -v graphify >/dev/null 2>&1; then
+    log "graphify detected — registering skill in project"
+    if [[ $DRY_RUN -eq 0 ]]; then
+      (cd "$PROJECT" && graphify install --project) || warn "falló: graphify install --project (continuando)"
+    else
+      log "run: (cd $PROJECT && graphify install --project)"
+    fi
+    if [[ -f "$PROJECT/.gitignore" ]]; then
+      if grep -q '^graphify-out/' "$PROJECT/.gitignore"; then
+        log "skip (already ignored): graphify-out/"
+      else
+        log "append: $PROJECT/.gitignore -> graphify-out/"
+        if [[ $DRY_RUN -eq 0 ]]; then printf '\ngraphify-out/\n' >> "$PROJECT/.gitignore"; fi
+      fi
+    else
+      log "create: $PROJECT/.gitignore -> graphify-out/"
+      if [[ $DRY_RUN -eq 0 ]]; then printf 'graphify-out/\n' > "$PROJECT/.gitignore"; fi
+    fi
+  else
+    warn "graphify no encontrado — instalalo con: uv tool install graphifyy"
   fi
 fi
 

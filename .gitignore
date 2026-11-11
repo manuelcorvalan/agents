@@ -15,6 +15,9 @@
 # --- CodeGraph — index (regenerable via `codegraph init`) ------------------
 .codegraph/
 
+# --- Graphify — generated output (regenerable via `graphify update .`) -----
+graphify-out/
+
 # --- Claude Code — only runtime artifacts (config files are tracked) -------
 .claude/cache/
 .claude/logs/
