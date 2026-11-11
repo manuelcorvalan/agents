@@ -522,6 +522,103 @@ Five new optional keys. Each maps to one `settings` field:
 
 What does not change: the config schema, the required fields, the event types, the precedence of process env over `.env`, `dry_run`, and the D7 redaction/secret scan. Option B (routing by agent) stays out of scope.
 
+### 2026-11-11 — F2 implementation sign-off (Architect)
+
+**A13. F2 contracts (OpenCode emitter, threads, mentions, `ci` gate, L2/L3).** F2 scope is signed **without Discord**. It amends D5 ("F2 (OpenCode)" note), D6, D7, D8, D9, D10, D12, D3 and A11. `event.v1` does not change (additive optional fields only, D11); `opencode.json`/`.claude/settings.json` are untouched or additive. Where an amendment conflicts with text above, this amendment wins.
+
+**A13.1 OpenCode plugin emitter (amends D5 note and D12 `opencode/`).**
+
+- **Extension mechanism (verified against `opencode v2.2.7`, `opencode plugin list`, the local plugins `rtk.ts`/`herdr-agent-state.js`/`caveman`, and the official plugin docs):** OpenCode extends via **JS/TS plugins**, not declarative `opencode.json` hooks. `opencode.json`'s `plugins` array takes npm package names only; local plugins are **auto-loaded from `~/.config/opencode/plugins/`**. Two plugin shapes exist: a factory function returning a hook-keyed object (`export const Plugin = async (ctx) => ({ event, 'chat.message', 'tool.execute.before', … })`), and the 2.x object form `{ id, setup(ctx) }` using `ctx.tool.hook(...)`.
+- **OpenCode exposes no Claude-Code hooks.** There is no `PreToolUse`/`SubagentStart`/`SubagentStop`/`Stop`. Verified events: `tool.execute.before` / `tool.execute.after` (payload `{tool, sessionID, agent, messageID, id, input}` in the 2.x form, or `(input, output)` with `input.tool` / `output.args` in the factory form), `session.created` (`properties.info` = Session `{id, title, parentID, …}` — a subagent is a **child session with `parentID`**), `session.idle` (`{ sessionID }` only, **no final text**), plus `session.status`, `session.error`, `session.compacted`, `session.deleted`, `message.part.updated`, `chat.message` and `permission.*`.
+- **Subagent tool:** canonical name `subagent` (v2), legacy `task` (v1). Input `{ agent, description, prompt, model?, sessionID?, background? }` — v1 `subagent_type` renamed to `agent`, `task_id` to `sessionID`. The tool returns the child `sessionID` in its output/metadata.
+- **Placement:** code under `integrations/chat/opencode/` (D12). Installed as `~/.config/opencode/plugins/chat-bridge/` via a symlink to the repo directory or `opencode plugin add <path>` (documented in the setup guide). No `opencode.json` change is required.
+- **Transport:** the plugin runs in-process (Bun runtime). It resolves `projectDir` from `ctx.directory` (absolute) and, for each mapped event, spawns `node <projectDir>/integrations/chat/bin/chat-emit.mjs` with a bridge-normalized JSON payload on **stdin** (non-blocking `spawn`, `stdio: ['pipe','ignore','ignore']`, fire-and-forget, never awaited, never writes to stdout). The plugin passes its own env plus `CHAT_BRIDGE_PROJECT_DIR=<projectDir>` (absolute). `bin/chat-emit.mjs` then performs the authoritative enable/`.env`/config resolution and the existing redact → validate → spool → kick-sender pipeline, unchanged.
+- **Dispatch (additive):** `bin/chat-emit.mjs` stays the single emit entry for all three emitters (Claude Code hooks, OpenCode plugin, CI step). A new pure mapper `src/core/map-opencode-hook.mjs` (parallel to `map-claude-hook.mjs`) is selected by a `platform` discriminator in the stdin payload (`"opencode"`, `"ci"`, or absent = `"claude-code"` default). `resolveLastText` becomes platform-specific: OpenCode has no transcript tail, so summary text is accumulated in-plugin and passed as `last_text`.
+- **Project-dir resolution (additive, required):** the emit path (`emit.mjs` `runEmit` and `resolveEmitterEnv`) reads `CHAT_BRIDGE_PROJECT_DIR` first, falling back to `CLAUDE_PROJECT_DIR`. The sender already does this (`sender.mjs`). `CLAUDE_PROJECT_DIR` keeps working for Claude Code.
+- **In-plugin state:** `childSessionID → { agentType, rootSessionID }`, built from `tool.execute.after` of the `subagent` tool (returns the child `sessionID`) and `session.created` (walk `parentID` chain to the root). State is per plugin process and lost on reload (accepted; see debt register).
+- **Summary/gate text:** the plugin accumulates the last assistant text per session from `chat.message` (`output.parts[].text`) and `message.part.updated` (`properties.part.type === 'text'`), and passes it as `last_text`. D7 redaction applies identically.
+
+Signed mapping table (parallel to D5):
+
+| OpenCode event | Emitted event.v1 | actor | data / summary |
+|---|---|---|---|
+| `tool.execute.before` where `tool` ∈ {`subagent`, `task`} | `handoff` | calling agent (`event.agent` if present, else `pm`) | `to` = `normalizeRole(input.agent)`; `task_title` = `redactTaskTitle(input.description)`. `input.prompt`, `model`, `background` and all other fields dropped. |
+| `session.created` with `info.parentID` (child session) | `agent.started` | agent type from the `childSessionID → agentType` map (fallback `unknown`) | `parent` = normalized parent role when known; `span_id` = hash(child `sessionID`). |
+| `session.idle` for a tracked child session | `agent.finished` | agent type from the map | `outcome` `success`/`unknown`; summary = redacted last text; gate detector on the same text. |
+| `session.error` for a tracked child session | `agent.finished` | agent type from the map | `outcome` = `error` (F2 finally emits `error`, closing the A4-c debt; OpenCode exposes a failure signal Claude Code does not). |
+| `session.idle` for the root session | 0..n `gate.result` | per A8 owner attribution | gate detector on the accumulated root last text. |
+
+- `source.platform = "opencode"`, `source.hook` = the OpenCode event name (`tool.execute.before`, `session.idle`, …), `origin = "local"`.
+- `correlation_id` = hash of the **root** session id (D4); the plugin substitutes the resolved root `session_id` for child-session events so the whole run groups. `span_id` = hash(child `sessionID`) for subagent events, hash(tool call `id`) for handoff.
+- D4 fingerprints unchanged: handoff `session_id·"handoff"·tool_use_id` (tool_use_id = the OpenCode tool call `id`); agent events `session_id·type·agent_id` (agent_id = child `sessionID`); gate `session_id·gate·story_id/release·raw_verdict·counts`.
+
+**A13.2 Threads per run (amends D3 `threads.json`, D8 `SendContext`, D4).**
+
+- **Shape (D12):** `threads.json` holds `{ "<correlation_id>": { "provider": "slack", "channel": "<id>", "thread_ref": "<ts>", "created_at": "…" } }`. One entry per run; key = `correlation_id` (hashed root session id). The file is persistent across sender exits and lives in the spool dir (0600, `safe-fs`).
+- **Creation:** the sender, on the **first** event of a `correlation_id` it posts to a channel, posts it as a channel root message and records `thread_ref` = the returned Slack `ts`. Every later event of the same `correlation_id` in the **same** channel posts with `thread_ts` = that `thread_ref`.
+- **Membership:**
+  - `handoff` is the run opener and **creates the thread** (it is the first run event).
+  - `agent.started` / `agent.finished` **reply into the run thread**.
+  - `gate.result` posts **top-level in its own channel** (D10 `channels["gate.result"]` or `default_channel`) and is **never threaded**, because it routes to a different channel in the common config and carries the gate-owner identity as the high-signal answer. A `gate.result` never consults `threads.json`.
+- **Resolution (amends D8):** before rendering, the sender sets `ctx.thread_ref` from `threads.json` when the event is a run event (`handoff`/`agent.*`) and an entry exists for its `correlation_id` + channel. The Slack adapter adds `thread_ts` when `ctx.thread_ref` is set. When it is absent for a run event, the adapter returns the new `ts` and the sender writes the entry.
+- **Lifecycle / pruning:** entries older than `spool.dead_letter_ttl_days` (default 7 days) are dropped at sender start, reusing the ledger/dead-letter prune pattern. A `correlation_id` whose events span multiple channels maps to one thread (the run channel); events in a second channel post top-level. Documented simplification.
+
+**A13.3 Controlled mentions (amends D7, D8, D10).**
+
+- **Additive `mentions` block in `config.json`** (local, gitignored per D16, no secrets — consistent with channel ids):
+  ```json
+  "mentions": { "reviewer": "U0123ABCDE", "qa": "U0456EFGHI" }
+  ```
+  Keys are roles or aliases already present in `identities.json` (validated against `roles`/`aliases`). Values are Slack **user** ids matching `^U[A-Z0-9]{8,}$`. Max 50 entries. Kept out of `identities.json` (that file stays team-wide with no workspace data).
+- **Rendering:** the sender appends the mention **after** the `escapeMrkdwn` pass, constructing `<@U…>` **only** from the allowlisted user id. Mentions are never parsed from free text, so D7 escaping stays intact and `<!channel>` / `<!here>` / `<!everyone>` / `<!subteam^…>` / `<@U…>` injection via agent output remains impossible. The constructed mention is re-verified against the same regex before render.
+- **Which events mention whom:**
+  - `handoff` → mentions the destination agent (`data.to`), when that role/alias is allowlisted (the F2 `@reviewer`/`@qa` ping).
+  - `agent.started` / `agent.finished` → no mention.
+  - `gate.result` → no auto-mention (the actor is already the gate owner; self-ping is noise). Deferred.
+- **Residual risk (Security):** a prompt-injected or misbehaving agent can set the subagent `agent` arg to an allowlisted role and thereby ping a real human. Mitigations: mentions are restricted to a small team-owned allowlist (never arbitrary humans), one mention per event, and the setup guide must state that pings reach the mapped team humans. Accepted for F2. Note: Security could not be re-invoked as a nested subagent for this sign-off (depth limit), so the Architect applied the F1 security-gate mitigations and **flags this for a Security re-review before F3**.
+
+**A13.4 Gate `ci` (amends D6, A8 `GATE_OWNERS`, D9 identities).**
+
+- **Dedicated path, not text detection.** `ci` is **not** added to `detect-gates.mjs` headers, so agent output cannot forge a CI PASS (avoids the M3 class for `ci`). The `ci` `gate.result` is produced only by a structured emitter through `bin/chat-emit.mjs` with `platform: "ci"`.
+- **Receipt shape (stdin JSON):**
+  ```json
+  {
+    "platform": "ci",
+    "session_id": "ci:<GITHUB_RUN_ID>",
+    "gate": "ci",
+    "verdict": "pass",
+    "raw_verdict": "PASS",
+    "release": "v1.2.3",
+    "counts": { "high": 0, "critical": 0 },
+    "summary": "CI: <workflow> <conclusion>"
+  }
+  ```
+  `raw_verdict` ∈ {`PASS`, `FAIL`}; `verdict` normalized to `pass`/`fail`. `release` optional (semver, matches `gateResultData.release`). `counts` optional (`high`/`critical` from the audit gate). `summary` passes through D7 redaction unchanged.
+- **owner/actor = `ci`.** Additive `ci` role in `identities.json` (`{ "display_name": "CI", "icon_emoji": ":robot_face:" }`) and `GATE_OWNERS.ci = "ci"` (A8). The dedicated emitter sets `actor` directly — no relay ambiguity.
+- **Fingerprint D4:** `session_id` = `ci:<GITHUB_RUN_ID>` (per-run); `event_id` = `gateEventId(session_id, gate)` with release/verdict/counts in the fingerprint; `correlation_id` = hash(`ci:<GITHUB_RUN_ID>`). Dedup: re-emitting the same result in the same run collapses; distinct runs are distinct events. No thread (posts top-level to the gate channel).
+- **CI job step:** `CHAT_BRIDGE_ENABLED=true node integrations/chat/bin/chat-emit.mjs` with the receipt JSON on stdin; token from the runner secret. No `*:history` scopes (D14 unchanged).
+
+**A13.5 L2/L3 hardening (amends A11/D3, D15).**
+
+- **L3 — CONFIRMED already closed:** `src/config/load-config.mjs` (`loadBridgeConfig`) resolves a relative `CHAT_BRIDGE_CONFIG`, including from the process env, against `projectDir` (`CHAT_BRIDGE_PROJECT_DIR`/`CLAUDE_PROJECT_DIR`), not `cwd`. F2 signs its inclusion as closed. No further code.
+- **L2 — uid check already enforced:** `ensureSpoolDir` rejects a spool dir owned by another uid (`spool_dir_bad_owner`, per A11). The remaining piece: extend the world-writable-parent check from the **immediate** parent to the **full ancestor chain** — walk from the spool dir's `realpath` up to the filesystem root, refusing any world-writable component without the sticky bit. F2 signs this full-chain walk; the immediate-parent check (`spool_parent_world_writable`) stays.
+
+**Deferred (not signed here):**
+- Discord adapter, `color` in identities, Discord config — excluded (no Discord in F2).
+- `icon_url` avatars ("avatares como imágenes") — D7 forbids `icon_url` and Security has not reviewed it. Deferred.
+- "Canales por story" (story-based routing) — routing stays by event type; `.env` covers channels (A12). Deferred.
+- `gate.result` auto-mention of the PM/requester — needs a requester field no receipt format carries. Deferred.
+- `agent.started.parent` for OpenCode — best-effort from plugin state; may be `pm`/omitted.
+
+**Debt register additions (F2):**
+
+| Item | Impact | Effort | Decision |
+|---|---|---|---|
+| OpenCode `childSessionID → agentType` map lost on plugin reload | low: `agent.*` falls back to `unknown` for subagents started before a reload | S | accept; document reload caveat |
+| OpenCode summary text depends on in-plugin message accumulation | medium: silent summary loss if the plugin misses a `message.part.updated` | S | fall back to no summary; contract test with fixture events |
+| Mentions allowlist enables a human ping from a misbehaving agent | medium: unwanted notification to a team human | S | Security re-review before F3; documented in setup guide |
+| `ci` gate has no receipt-format text in `STANDARDS.md` | low: only the dedicated path emits it | S | keep dedicated-only; add a `STANDARDS.md` receipt format only if a human needs to author one |
+
 ## Change log
 
 - **2026-11-11:** Jira link-back removed from scope by user decision.
@@ -529,3 +626,4 @@ What does not change: the config schema, the required fields, the event types, t
 - **2026-11-11:** Amendments A8 (owner-bound gate attribution, Security M3), A4-c (`outcome` enum `success|error|unknown`), A9 (receipt archive locations) and A10 (bare-URL residual risk, defang before F3) accepted after the F1 review and security gate.
 - **2026-11-11:** Re-review follow-ups: `release` removed from F1 `GATE_OWNERS` (release gate deferred to F2); A6 addendum `RULES_VERSION` 1.2.0 (M1 and M2); A11 spool parent check by `realpath` (L2).
 - **2026-11-11:** A12 (channels via `.env`, Option A) signed; per-agent routing (Option B) excluded from scope.
+- **2026-11-11:** A13 (F2 sign-off, no Discord) signed: OpenCode plugin emitter mapping (A13.1), threads per run (A13.2), controlled mentions allowlist (A13.3), `ci` gate dedicated path (A13.4), L2 full-chain walk + L3 closed (A13.5). Discord, `icon_url`, story-based routing and `gate.result` PM-mention deferred.
