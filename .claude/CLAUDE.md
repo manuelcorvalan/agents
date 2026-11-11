@@ -209,8 +209,7 @@ Diagram tools are available via MCP (configured in `.claude/settings.json`). Dir
 | `docs/metrics.md` | Project KPIs and metrics |
 | `.github/workflows/ci.yml` | CI pipeline (lint + build + tests + secret-scan + audit) |
 | `bin/factory-init` | Bootstraps the software-factory structure in a new project |
-| `config.json` | OpenCode provider/model config (not used by Claude Code) |
-| `opencode.json` | OpenCode MCP config (reference only; Claude Code uses `.claude/settings.json`) |
+| `opencode.json` | OpenCode config (provider DeepSeek + MCP + permisos por agente; referencia — Claude Code usa `.claude/settings.json`) |
 | `.claude/settings.json` | Claude Code MCP configuration (Jira + context7/repomix/mermaid/excalidraw) |
 
 ---

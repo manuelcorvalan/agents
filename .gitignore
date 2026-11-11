@@ -19,6 +19,7 @@
 .claude/cache/
 .claude/logs/
 .claude/tmp/
+.claude/settings.local.json
 
 # --- Chat bridge — local spool/ledger/log (ADR-0003 D2) -------------------
 .chat-bridge/

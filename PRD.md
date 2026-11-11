@@ -149,8 +149,7 @@ opencode-agents/
 │       ├── redaction/         # Redacción de resúmenes (secretos, sin diffs/código)
 │       └── README.md          # Setup del bridge
 │
-├── config.json                # OpenCode: provider DeepSeek + modelos
-├── opencode.json              # OpenCode: MCP Jira + config proyecto
+├── opencode.json              # OpenCode: provider DeepSeek + modelos + MCP Jira + config proyecto
 ├── README.md                  # Instalación dual-platform
 ├── .env.example
 ├── .envrc
@@ -160,7 +159,7 @@ opencode-agents/
 ## Assumptions & Constraints
 
 - Claude Code no tiene subagentes de dominio built-in; los 14 subagentes (PO, Business, Backend, Frontend, Database, Data Analyst, QA, Web Design, DevOps, Reporting, Architect, Security, Release Manager, Technical Writer) se registran vía wrappers mínimos en `.claude/agents/*.md`. El PM no es subagente — se implementa como instrucción en `CLAUDE.md`.
-- Los modelos se especifican solo en OpenCode (`config.json`). Claude Code usa sus modelos por defecto.
+- Los modelos se especifican solo en OpenCode (`opencode.json`). Claude Code usa sus modelos por defecto.
 - Las variables de entorno (`.env`) son compartidas entre ambas plataformas.
 - El usuario instalará symlinks manualmente (o clonará el repo en su proyecto).
 - Team Chat Bridge: el usuario dispone de un workspace de Slack con permisos de admin para crear/instalar la app del bot.

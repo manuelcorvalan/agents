@@ -9,12 +9,14 @@ En OpenCode podés elegir el motor de modelos: **[DeepSeek](#opción-a--deepseek
 ### Para OpenCode
 
 - [OpenCode](https://opencode.ai) instalado (`npm i -g opencode-ai` o `brew install anomalyco/tap/opencode`)
+- [Node.js](https://nodejs.org) 22+ — lo requiere OpenCode v2 y los plugins opcionales
 - **Motor de modelos — elegí uno:**
   - **DeepSeek**: API key de [DeepSeek](https://platform.deepseek.com)
   - **Claude Code**: CLI de [Claude Code](https://claude.ai/code) instalado y autenticado (`npm i -g @anthropic-ai/claude-code` + `claude login`) — sin API key, usa tu suscripción
 - [RTK](https://github.com/rtk-ai/rtk) — comprime output de comandos bash (~60-90% menos tokens)
 - [CodeGraph](https://github.com/colbymchenry/codegraph) — índice de código local para agentes técnicos
 - [direnv](https://direnv.net) (recomendado para cargar variables de entorno automáticamente)
+- Plugins opcionales: [ponytail](https://github.com/DietrichGebert/ponytail) y [caveman](https://github.com/JuliusBrussee/caveman) — ver [Plugins](#plugins-opcional)
 
 ### Para Claude Code
 
@@ -42,6 +44,8 @@ cp .env.example .env
 direnv allow .
 ```
 
+El repo trae el provider DeepSeek en su `opencode.json`, así que dentro de `~/opencode-agents` funciona directo. **Para usarlo desde otros proyectos**, mergeá el bloque `providers` de [Configuración → Opción A](#opción-a--deepseek) en `~/.config/opencode/opencode.json` (o corré `bin/factory-init` y copialo desde el proyecto).
+
 ### Herramientas de optimización de tokens (opcional pero recomendado)
 
 ```bash
@@ -49,6 +53,10 @@ direnv allow .
 brew install rtk                     # o: cargo install rtk
 rtk init -g --opencode               # plugin para OpenCode (global)
 rtk init -g                          # hook PreToolUse para Claude Code
+
+# ponytail + caveman — plugins de estilo/alcance (ver § Plugins)
+opencode plugin add @dietrichgebert/ponytail
+npx -y github:JuliusBrussee/caveman -- --only opencode
 
 # CodeGraph — índice de código local para agentes técnicos (backend, frontend, qa, architect, database, data-analyst, security)
 npm i -g @colbymchenry/codegraph      # o: curl -fsSL .../install.sh | sh
@@ -61,6 +69,7 @@ codegraph init
 
 > **RTK** intercepta y reescribe comandos (`git status` → `rtk git status`) reduciendo el output que el agente lee. Instalado global, beneficia a todos los agentes.
 > **CodeGraph** construye un knowledge graph del proyecto (símbolos, call paths, blast radius). Indexá cada proyecto donde trabajen los agentes técnicos.
+> **ponytail / caveman** son opcionales: `bin/factory-init <proyecto> --with-plugins` los detecta e instala por vos.
 
 > **Alternativa:** en lugar de symlinks, podés clonar el repo directamente dentro del directorio de tu proyecto y correr `opencode init` desde ahí. OpenCode detecta `agents/` y `commands/` locales automáticamente.
 
@@ -126,7 +135,7 @@ OpenCode soporta ambos motores en paralelo. Elegís el que prefieras para cada a
 
 | | DeepSeek | Claude Code (plugin) |
 |---|---|---|
-| Config | provider `deepseek` en `~/.config/opencode/config.json` | `"plugin": ["@khalilgharbaoui/opencode-claude-code-plugin"]` |
+| Config | provider `deepseek` en `~/.config/opencode/opencode.json` | `"plugins": ["@khalilgharbaoui/opencode-claude-code-plugin"]` |
 | Credencial | `DEEPSEEK_API_KEY` en `.env` | ninguna — usa tu `claude login` (Pro/Max, Bedrock, Vertex o API key) |
 | Costo | por token (API) | flat-rate de tu suscripción |
 | Modelos | `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-pro` | `claude-code/haiku`, `claude-code/sonnet`, `claude-code/opus` (+ variantes reasoning) |
@@ -140,32 +149,40 @@ OpenCode soporta ambos motores en paralelo. Elegís el que prefieras para cada a
 
 #### Opción A — DeepSeek
 
-Global (`~/.config/opencode/config.json`):
+Global (`~/.config/opencode/opencode.json`):
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "deepseek/deepseek-v4-flash",
-  "provider": {
+  "providers": {
     "deepseek": {
-      "options": {
-        "apiKey": "{env:DEEPSEEK_API_KEY}",
-        "baseURL": "https://api.deepseek.com"
-      },
+      "name": "DeepSeek",
+      "env": ["DEEPSEEK_API_KEY"],
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": { "baseURL": "https://api.deepseek.com" },
       "models": {
         "deepseek-v4-flash": {
-          "limit": { "context": 64000, "output": 8192 },
-          "options": { "temperature": 0.2 }
+          "modelID": "deepseek-flash",
+          "name": "DeepSeek V4.1 Flash",
+          "limit": { "context": 1048576, "output": 393216 }
         },
         "deepseek-v4-pro": {
-          "limit": { "context": 64000, "output": 8192 },
-          "options": { "temperature": 0.0 }
+          "modelID": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "limit": { "context": 1048576, "output": 393216 }
         }
       }
     }
   }
 }
 ```
+
+> Este bloque ya está incluido en el `opencode.json` del repo, así que dentro de `~/agents` funciona sin copiar nada. Para usarlo desde cualquier proyecto, mergealo en `~/.config/opencode/opencode.json`.
+>
+> **OpenCode v2** usa `providers` (plural) + `package` + `settings`. El formato v1 (`provider` + `npm` + `options`) todavía se lee, pero está deprecado. `modelID` es el ID que viaja a la API (`deepseek-flash`, `deepseek-v4-pro`); la clave del mapa es el nombre que usás en `model:`.
+>
+> La credencial se toma de `DEEPSEEK_API_KEY` (array `env`). Sin esa variable el provider arranca pero responde **HTTP 401** — ver [Variables de entorno](#variables-de-entorno).
 
 #### Opción B — Claude Code (plugin)
 
@@ -175,13 +192,13 @@ Config mínima — agregar a `opencode.json` (proyecto) o `~/.config/opencode/op
 
 ```json
 {
-  "plugin": ["@khalilgharbaoui/opencode-claude-code-plugin"]
+  "plugins": ["@khalilgharbaoui/opencode-claude-code-plugin"]
 }
 ```
 
 Luego reiniciar OpenCode y seleccionar un modelo `claude-code/*` con `/models`.
 
-Overrides opcionales (en `provider.claude-code`):
+Overrides opcionales (en `providers.claude-code`; el formato v1 `provider` + `options` sigue aceptándose):
 
 ```json
 {
@@ -257,8 +274,8 @@ Contiene la configuración específica del proyecto: MCP y permisos por agente.
 }
 ```
 
-> **Nota:** OpenCode mergea automáticamente `~/.config/opencode/config.json` y `~/.config/opencode/opencode.json` (global) con `opencode.json` (proyecto). Lo global define providers/modelos/plugins/MCP; lo del proyecto define MCP y permisos por agente.
-> **Importante:** a nivel proyecto solo se leen `opencode.json` / `opencode.jsonc`. Un `config.json` en el proyecto **no se lee** (el soporte de `config.json` es solo para la ruta global `~/.config/opencode/`).
+> **Nota:** OpenCode mergea (de menor a mayor precedencia) `~/.config/opencode/opencode.json` con los `opencode.json` / `opencode.jsonc` del proyecto. Lo global define providers/modelos/plugins/MCP; lo del proyecto define MCP y permisos por agente.
+> **Importante:** OpenCode **no lee** `config.json` en ninguna ruta: el archivo de configuración siempre se llama `opencode.json` (o `opencode.jsonc`).
 
 ### Claude Code (`.claude/settings.json`)
 
@@ -302,7 +319,7 @@ OpenCode:
 }
 ```
 
-> Los tools de MCP están disponibles por defecto; el grant explícito a PM/Reporting es opcional. Si se usa, va en `opencode.json` (a nivel proyecto, `config.json` no se lee). Reporting se define como subagente (`mode: subagent`) con los tools `jira_*` habilitados para generar reportes de estado y sprint.
+> Los tools de MCP están disponibles por defecto; el grant explícito a PM/Reporting es opcional. Si se usa, va en `opencode.json` a nivel proyecto. Reporting se define como subagente (`mode: subagent`) con los tools `jira_*` habilitados para generar reportes de estado y sprint.
 
 Claude Code: el PM (definido en `.claude/CLAUDE.md`) usa directamente las herramientas MCP expuestas por `settings.json`.
 
@@ -327,7 +344,7 @@ Habilitado **solo** para los agentes técnicos Backend, Frontend, QA, Architect,
 }
 ```
 
-> **Importante:** los agentes de OpenCode se configuran vía `opencode.json` (o `opencode.jsonc`) a nivel proyecto y global (`~/.config/opencode/opencode.json`). El archivo `config.json` a nivel proyecto **no se lee** (legacy, solo global `~/.config/opencode/config.json` es soportado).
+> **Importante:** los agentes de OpenCode se configuran vía `opencode.json` (o `opencode.jsonc`) a nivel proyecto y global (`~/.config/opencode/opencode.json`). OpenCode no lee `config.json` en ninguna ruta.
 > **Modo symlink:** para enforcement global (agentes en `~/.config/opencode`), espejar el bloque de permisos en `~/.config/opencode/opencode.json`.
 
 ## MCP — Context7 (docs actualizadas)
@@ -400,11 +417,12 @@ Habilitados para **Architect**, **Web Design**, **PO**, **PM** y (mermaid) **Tec
 
 ## Optimización de tokens
 
-Cinco capas reducen el consumo de tokens, cada una dirigida al agente que más le aprovecha:
+Seis capas reducen el consumo de tokens, cada una dirigida al agente que más le aprovecha:
 
 | Herramienta | Agentes | Qué comprime | Beneficio |
 |---|---|---|---|
 | **caveman** | PM (comunicación interna) | Texto generado por el agente (backlog, resúmenes, delegación) | ~65% menos output |
+| **ponytail** | Todos (global, opcional) | Alcance del código: escribe menos líneas y menos archivos | ~53% menos código, ~45% menos tokens |
 | **RTK** | Todos (global) | Output de comandos bash (`git status`, `grep`, `cat`, tests...) | ~60-90% menos tokens |
 | **CodeGraph** | Backend, Frontend, QA, Architect, Database, Data Analyst, Security | Tool calls de exploración de código (call paths, blast radius en 1 llamada) | 69% menos tokens, ~60% menos costo |
 | **Context7** | Backend, Frontend, Database, DevOps, Architect, QA, Security | Docs de librerías en vez de APIs alucinadas → menos loops de retry | Menos iteraciones y errores |
@@ -412,11 +430,35 @@ Cinco capas reducen el consumo de tokens, cada una dirigida al agente que más l
 
 Detalles por herramienta:
 
-- **caveman** — el PM usa estilo terse (skill `caveman`) para la comunicación interna agente↔agente: prompts de delegación y resúmenes de subagentes comprimidos. Los reportes al **usuario** se mantienen en español claro y completo. Configurado en `agents/pm.md` y `.claude/CLAUDE.md`.
+- **caveman** — el PM usa estilo terse (skill `caveman`) para la comunicación interna agente↔agente: prompts de delegación y resúmenes de subagentes comprimidos. Los reportes al **usuario** se mantienen en español claro y completo. Configurado en `agents/pm.md` y `.claude/CLAUDE.md`. El plugin de caveman (ver [Plugins](#plugins-opcional)) agrega además el modo siempre-activo, `/caveman-*` y los subagentes cavecrew.
+- **ponytail** — "lazy senior dev": inyecta reglas de YAGNI en cada turno para que los agentes resuelvan con la menor cantidad de código posible, sin tests de menos. Es un plugin de OpenCode y Claude Code (ver [Plugins](#plugins-opcional)).
 - **RTK** — instalado global, reescribe comandos de bash a sus equivalentes comprimidos antes de que el output entre al contexto. No requiere configuración por agente.
 - **CodeGraph** — los agentes técnicos consultan el grafo (`codegraph_explore`) antes de modificar código, evitando loops de grep/read. Configurado en `agents/backend.md`, `agents/frontend.md`, `agents/qa.md`, `agents/architect.md`, `agents/database.md`, `agents/data-analyst.md`, `agents/security.md`. Permisos restringidos vía `permission.codegraph_*` en `opencode.json` (deny para el resto de agentes).
 - **Context7** — los agentes técnicos consultan docs versionadas (`query-docs`) en vez de inventar APIs. Configurado en los `agents/*.md` técnicos y restringido vía `permission.context7_*`.
 - **Repomix** — empaqueta el repo en un archivo para planificar sin explorar. Configurado para Architect/Technical Writer/PM y restringido vía `permission.repomix_*`.
+
+## Plugins (opcional)
+
+Los agentes funcionan sin plugins. Estos tres son **opcionales** y se pueden instalar juntos con:
+
+```bash
+bin/factory-init <proyecto> --with-plugins
+```
+
+| Plugin | Qué aporta | OpenCode | Claude Code |
+|---|---|---|---|
+| **ponytail** | "Lazy senior dev": menos código, menos archivos, mismo resultado. Aporta `/ponytail`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help` | `opencode plugin add @dietrichgebert/ponytail` | `/plugin marketplace add DietrichGebert/ponytail` + `/plugin install ponytail@ponytail` |
+| **caveman** | Modo terse siempre-activo, `/caveman-*`, cavecrew y compresión de lectura (logs/JSON/CSV) | `npx -y github:JuliusBrussee/caveman -- --only opencode` | `claude plugin marketplace add JuliusBrussee/caveman` + `claude plugin install caveman@caveman` |
+| **RTK** | Reescribe comandos bash a equivalentes comprimidos (hook global) | `rtk init -g --opencode` | `rtk init -g` |
+
+### Notas
+
+- **ponytail + caveman se complementan**: ponytail decide *cuánto código* se escribe; caveman decide *cómo se lee la respuesta*. La propia documentación de caveman recomienda usarlos juntos.
+- **caveman y el provider DeepSeek**: el proxy de caveman (`caveman enable opencode`) solo enruta los providers `openai`, `anthropic` y `opencode-go`. Con `deepseek` no hay compresión de tráfico: siguen aplicando las reglas, skills y comandos (`AGENTS.md`), pero no el proxy.
+- **Alcance**: `opencode plugin add` escribe en `~/.config/opencode/opencode.json` (global). Para limitarlo a un proyecto, agregá el paquete en `plugins` del `opencode.json` del proyecto.
+- **caveman en OpenCode**: el instalador oficial rechaza escribir sobre directorios symlinkeados (y `factory-init` symlinkea `~/.config/opencode/commands`). `factory-init --with-caveman` lo instala en un directorio temporal y mergea el resultado: plugin + skills + `AGENTS.md` a `~/.config/opencode/`, y los `/caveman-*` a `commands/` del repo (así quedan versionados y llegan a todos los proyectos por el symlink). OpenCode autocarga `~/.config/opencode/plugins/*`, no hace falta tocar `opencode.json`.
+- **Claude Code**: `ponytail@ponytail` se declara además en `enabledPlugins` de `.claude/settings.json`; el plugin de caveman se instala con los dos comandos de arriba.
+- **Desinstalar**: `opencode plugin remove <paquete>` / `/plugin uninstall ponytail@ponytail`; caveman: `npx -y github:JuliusBrussee/caveman -- --uninstall`.
 
 ## Comandos
 
@@ -438,8 +480,8 @@ Detalles por herramienta:
 | `.claude/agents/*.md` | — | Subagent wrappers (Claude Code) |
 | `.claude/commands/*.md` | — | Slash commands |
 | `.claude/settings.json` | — | MCP (Jira + context7/repomix/mermaid/excalidraw) |
-| `opencode.json` | MCP (Jira + context7/repomix/mermaid/excalidraw) + permisos por agente (codegraph, context7, repomix, mermaid, excalidraw) + plugin claude-code (opcional) | — |
-| `~/.config/opencode/opencode.json` | Plugin RTK + MCP (CodeGraph + context7/repomix/mermaid/excalidraw) + plugin claude-code (opcional) + skills caveman + permisos globales (global) | — |
+| `opencode.json` | Provider DeepSeek + MCP (Jira + context7/repomix/mermaid/excalidraw) + permisos por agente (codegraph, context7, repomix, mermaid, excalidraw) + plugins opcionales | — |
+| `~/.config/opencode/opencode.json` | Provider DeepSeek + plugins (RTK, ponytail, caveman) + MCP (CodeGraph + context7/repomix/mermaid/excalidraw) + permisos globales | — |
 | `~/.config/opencode/AGENTS.md` | Base caveman + guía CodeGraph (global) | — |
 | `.env` | Compartido | Compartido |
 
@@ -577,8 +619,7 @@ opencode-agents/
 │   ├── runbook.md
 │   └── retro.md
 ├── STANDARDS.md            # DoD/DoR/convenciones/gates (fuente de verdad de calidad)
-├── config.json             # Referencia: provider/modelos/permisos (global ~/.config/opencode/config.json) — no se lee a nivel proyecto
-├── opencode.json           # MCP + permisos por agente (OpenCode)
+├── opencode.json           # Provider DeepSeek + MCP + permisos por agente (OpenCode)
 ├── .codegraph/             # Índice CodeGraph (generado por `codegraph init`, no versionado)
 ├── PRD.md                  # Documento de visión del producto
 └── README.md
@@ -634,6 +675,25 @@ direnv status
 # Si no, ejecutar:
 cd ~/opencode-agents
 direnv allow .
+```
+
+### OpenCode dice `Model unavailable: deepseek/...`
+
+El provider no está registrado. Verificá que el bloque `providers.deepseek` esté en `opencode.json` (proyecto) o `~/.config/opencode/opencode.json` (global), no en un `config.json`:
+
+```bash
+opencode debug config | grep -A5 '"providers"'
+opencode models | grep '^deepseek/'
+```
+
+### `HTTP 401 Authentication Fails`
+
+La variable `DEEPSEEK_API_KEY` no llegó al proceso. OpenCode **no lee** `.env` por sí solo:
+
+```bash
+echo "${DEEPSEEK_API_KEY:+presente}"
+# Si está vacío: instalá direnv y autorizá el directorio, o cargá a mano:
+set -a && source .env && set +a && opencode
 ```
 
 ### Jira MCP no funciona
