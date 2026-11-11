@@ -27,6 +27,11 @@ calcula, **de dónde** sale el dato, el **target** y la **frecuencia**.
 | Cobertura promedio | avg(line coverage) y avg(branch coverage) | CI coverage report | ≥ 80% | Por sprint |
 | Tokens por agente | tokens in/out por agente | skill `caveman-stats` | Trend ↓ / presupuesto | Por sprint |
 | Costo por agente | tokens × tarifa (o flat-rate) | `caveman-stats` + billing | Dentro de presupuesto | Por sprint |
+| Eventos publicados (bridge) | count ledger `sent` + `sent-unknown` | `.chat-bridge/ledger.jsonl` | Trend ↑ / baseline | Por sprint |
+| Tasa de entrega (bridge) | sent / (sent + dead-letter) | ledger + dead-letter | ≥ 99% | Por sprint |
+| Dead-letter rate | count dead-letter / (sent + dead-letter) | `.chat-bridge/dead-letter.jsonl` | ≤ 1% y 0 `not_in_channel` | Por sprint |
+| Integridad de atribución | receipts relayados / gate.result publicados | `.chat-bridge/bridge.log` | 0 relayados | Por release |
+| Fallos de redacción | eventos con `redaction.summary_dropped` | spool + `bridge.log` | 0 secretos publicados | Por release |
 
 ---
 
@@ -167,7 +172,74 @@ calcula, **de dónde** sale el dato, el **target** y la **frecuencia**.
 
 ---
 
-## 5. Panel por sprint (formato de salida)
+## 5. KPIs del Team Chat Bridge
+
+Aplican a `integrations/chat/` (ADR-0003, F1 Slack outbound). Todas las fuentes
+son archivos locales del proyecto: **no se consulta la API de Slack**.
+
+| Archivo | Contenido |
+|---|---|
+| `.chat-bridge/ledger.jsonl` | una línea por evento entregado: `{event_id, status, provider, channel, message_ref, sent_at}` |
+| `.chat-bridge/dead-letter.jsonl` | una línea por evento no entregado: `{event_id?, reason, error_code, attempts, failed_at}` |
+| `.chat-bridge/bridge.log` | `info`/`warn` del sender: `dead_letter <código>`, `gate_relayed:<gate>`, `env_*`, `spool_*` |
+| `.chat-bridge/dry-run.log` | payload exacto que se habría publicado (modo dry-run) |
+
+> **Ventana:** el ledger se poda a 30 días y el dead-letter a
+> `delivery.dead_letter_ttl_days` (7 por defecto). Reportar ventanas ≤ 7 días o
+> el denominador de la tasa de entrega queda incompleto.
+
+### 5.1 Eventos publicados
+- **Definición:** eventos que llegaron a Slack, agrupados por `provider` y `channel`.
+- **Fórmula:** `count(líneas del ledger con status ∈ {sent, sent-unknown})`.
+- **Fuente:** `.chat-bridge/ledger.jsonl`.
+- **Target:** trend ↑ / baseline. `sent-unknown` cuenta como publicado: Slack respondió 2xx con body ilegible y no se reintenta para no duplicar.
+- **Frecuencia:** por sprint. **Owner:** Reporting.
+
+### 5.2 Tasa de entrega
+- **Definición:** proporción de eventos que el sender logró entregar.
+- **Fórmula:** `sent / (sent + dead_letter)`.
+- **Fuente:** ledger + dead-letter.
+- **Target:** ≥ 99%.
+- **Asunción:** el denominador son los eventos que llegaron al sender. Un evento que nunca salió del spool (hook sin sender) no aparece en ninguno de los dos archivos.
+- **Frecuencia:** por sprint. **Owner:** Reporting.
+
+### 5.3 Dead-letter rate y errores por código
+- **Definición:** eventos que quedaron en la cola de descarte y por qué.
+- **Fórmula:** `count(dead-letter) / (sent + count(dead-letter))`, agrupado por `error_code`.
+- **Fuente:** `.chat-bridge/dead-letter.jsonl`.
+- **Target:** ≤ 1%, y **0** entradas con `error_code = not_in_channel` (es configuración, no una falla transitoria).
+- **Códigos esperables:** `not_in_channel` (el bot no está en el canal), `invalid_auth` (token revocado), `network_error`, `rotation_leftover`, `invalid_response`.
+- **Frecuencia:** por sprint. **Owner:** Reporting.
+
+### 5.4 Duplicados evitados
+- **Definición:** eventos descartados por dedup (`event_id` ya entregado).
+- **Fórmula:** `N/D` en F1 — el ledger registra lo entregado, no lo descartado.
+- **Fuente:** requeriría un contador `deduped` en el sender (F2).
+- **Target:** informativo.
+
+### 5.5 Latencia de entrega
+- **Definición:** tiempo entre la ocurrencia del evento y su publicación.
+- **Fórmula:** `N/D` en F1 — el ledger guarda `sent_at` pero no el timestamp del evento.
+- **Fuente:** requeriría persistir `occurred_at` en el ledger (F2).
+- **Target:** p95 ≤ 60 s cuando exista la medición.
+
+### 5.6 Integridad de atribución
+- **Definición:** receipts de gate publicados por un agente que no es su owner.
+- **Fórmula:** `count(bridge.log 'info gate_relayed:<gate>') / count(gate.result publicados)`.
+- **Fuente:** `.chat-bridge/bridge.log`.
+- **Target:** 0 en condiciones normales. Un valor > 0 significa que un agente publicó un receipt ajeno: se muestra como "Relayed (unverified)" y **no** cuenta como veredicto.
+- **Frecuencia:** por release. **Owner:** Security + Reporting.
+
+### 5.7 Fallos de redacción
+- **Definición:** eventos cuyo resumen no pasó la redacción y se publicaron solo con metadatos (`redaction.summary_dropped = true`), más cualquier secreto efectivamente publicado.
+- **Fórmula:** `count(eventos con summary_dropped) / total`; un secreto publicado es un **incidente**, no un KPI.
+- **Fuente:** spool + `.chat-bridge/bridge.log`.
+- **Target:** 0 secretos publicados (no negociable). `summary_dropped` es esperado en resúmenes con bloques de código o diffs: el evento sale sin resumen, con metadatos.
+- **Frecuencia:** por release. **Owner:** Security.
+
+---
+
+## 6. Panel por sprint (formato de salida)
 
 ```
 PANEL KPI — Sprint <N> (<inicio> → <fin>) — PROJ <key> — Plataforma <OpenCode|Claude Code>
@@ -179,10 +251,11 @@ Escapados:       <n> (release <tag>)           target: 0           PASS/FAIL
 Rework:          <pct>%                        target: ≤15%        PASS/FAIL
 Cobertura:       <pct>% lines / <pct>% branches  target: ≥80%      PASS/FAIL
 Tokens:          <in>/<out> — costo <$>        (por agente abajo)
+Bridge:          <n> publicados | entrega <pct>% | dead-letter <n> (<código>)  target: ≥99% / ≤1%
 Asunciones: <story points poblados? status names? ventana?>
 ```
 
-## 6. Loop de retro
+## 7. Loop de retro
 Al cierre de cada release (`SHIPPED`), Reporting genera el **post-mortem**
 (qué falló, causa raíz, acciones con owner y due date) y alimenta `docs/kb/`
 (`lessons-learned.md`, siguiendo el formato de `docs/kb/README.md`). Si la
