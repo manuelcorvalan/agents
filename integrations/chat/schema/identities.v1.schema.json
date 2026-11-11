@@ -35,7 +35,7 @@
     },
     "roles": {
       "type": "object",
-      "description": "role key -> identity. Must contain the 15 team roles, every cavecrew-* agent in agents/ (A1) and unknown; additional roles are allowed (additive).",
+      "description": "role key -> identity. Must contain the 15 team roles, ci, every cavecrew-* agent in agents/ (A1) and unknown; additional roles are allowed (additive).",
       "propertyNames": {
         "$ref": "#/$defs/roleKey"
       },
@@ -85,6 +85,9 @@
         "tech-writer": {
           "$ref": "#/$defs/identity"
         },
+        "ci": {
+          "$ref": "#/$defs/identity"
+        },
         "cavecrew-reviewer": {
           "$ref": "#/$defs/identity"
         },
@@ -117,6 +120,7 @@
         "security",
         "release-manager",
         "tech-writer",
+        "ci",
         "cavecrew-reviewer",
         "cavecrew-builder",
         "cavecrew-investigator",

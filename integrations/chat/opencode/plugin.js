@@ -64,16 +64,40 @@ export function sessionInfoOf(event) {
   };
 }
 
-/** Text of a message.part.updated event, only for text parts. */
-export function partTextOf(event) {
+/**
+ * Role of a message.updated event (1.x properties.info, 2.x data).
+ * Parts carry no role: the message id is the only link, so the plugin must
+ * remember it before it can trust a part as assistant output.
+ */
+export function messageRoleOf(event) {
+  const info = event?.properties?.info ?? event?.data?.info ?? event?.data;
+  if (!info || typeof info !== 'object') return undefined;
+  if (info.role === 'assistant' || info.role === 'user') return info.role;
+  if (info.type === 'assistant' || info.type === 'user') return info.type;
+  return undefined;
+}
+
+/** Message id of a message.updated event. */
+export function messageIDOf(event) {
+  const info = event?.properties?.info ?? event?.data?.info ?? event?.data;
+  return typeof info?.id === 'string' && info.id ? info.id : undefined;
+}
+
+/**
+ * Text of a message.part.updated event, only for text parts of an assistant
+ * message. A user part is the prompt and must never reach the summary buffer.
+ */
+export function partTextOf(event, role) {
+  if (role !== 'assistant') return undefined;
   const part = event?.properties?.part;
   if (!part || part.type !== 'text' || typeof part.text !== 'string') return undefined;
   const sessionID = event?.properties?.sessionID ?? part.sessionID;
   return { sessionID, text: part.text.slice(0, MAX_TEXT_CHARS) };
 }
 
-/** Join the text parts of a chat.message output. */
-export function chatTextOf(output) {
+/** Join the text parts of a chat.message output, only for assistant messages. */
+export function chatTextOf(output, role) {
+  if (role !== 'assistant') return '';
   const parts = Array.isArray(output?.parts) ? output.parts : [];
   return parts
     .filter((part) => part && part.type === 'text' && typeof part.text === 'string')
@@ -98,6 +122,7 @@ export const ChatBridgePlugin = async (ctx) => {
   const pendingCalls = new Map(); // tool call id -> agentType
   const pendingByParent = new Map(); // parent sessionID -> agentType
   const texts = new Map(); // sessionID -> last text
+  const roles = new Map(); // messageID -> user|assistant
 
   function rootOf(sessionID) {
     let current = sessionID;
@@ -211,14 +236,21 @@ export const ChatBridgePlugin = async (ctx) => {
       const type = event?.type;
       if (type === 'session.created') onSessionCreated(event);
       else if (type === 'session.idle' || type === 'session.error') onSessionEnd(event, type);
-      else if (type === 'message.part.updated') {
-        const update = partTextOf(event);
+      else if (type === 'message.updated') {
+        const messageID = messageIDOf(event);
+        const role = messageRoleOf(event);
+        if (messageID && role) roles.set(messageID, role);
+      } else if (type === 'message.part.updated') {
+        const messageID = event?.properties?.part?.messageID;
+        const update = partTextOf(event, messageID ? roles.get(messageID) : undefined);
         if (update?.sessionID && typeof update.text === 'string') texts.set(update.sessionID, update.text);
       }
     },
     'chat.message': async (input, output) => {
+      // chat.message fires on the user's prompt (role "user"), so it can only
+      // contribute when an assistant-role message is explicitly present.
       const sessionID = input?.sessionID ?? output?.message?.sessionID;
-      const text = chatTextOf(output);
+      const text = chatTextOf(output, output?.message?.role);
       if (isNonEmptyString(sessionID) && text) texts.set(sessionID, text);
     },
     'tool.execute.before': async (input, output) => trackTool(input, output, { before: true }),

@@ -56,7 +56,7 @@ Limitaciones conocidas:
 
 - Claude Code: `agent.started` no muestra quién lo lanzó y `outcome` nunca es `error` (ADR A4/A4-c). La duración no se mide.
 - OpenCode: el mapa `sesión hija → agente` vive en memoria del plugin. Si recargás OpenCode en medio de un run, los subagentes ya lanzados se reportan como `unknown`.
-- OpenCode: el resumen sale del último texto que acumuló el plugin (`message.part.updated` / `chat.message`). Si el plugin pierde esa actualización, el evento se publica sin resumen.
+- OpenCode: el resumen sale del último texto de un mensaje **assistant** que acumuló el plugin (`message.part.updated` con rol resuelto por `message.updated`). Si el plugin pierde esa actualización, el evento se publica sin resumen. El prompt del usuario nunca se acumula.
 
 ## Requisitos
 
@@ -488,7 +488,7 @@ Qué hace y qué no:
 - **Qué publica:** `handoff` (tool `subagent` o `task`), `agent.started` (`session.created` de una sesión hija), `agent.finished` (`session.idle` o `session.error` de una sesión hija) y `gate.result` (receipts en el texto acumulado de la sesión raíz).
 - **Qué NO publica:** el `prompt` de la delegación, el `model`, `background`, la salida de otras herramientas, diffs ni código. Del input de la delegación salen solo `agent`/`subagent_type` y `description`; el resto se descarta antes de salir del proceso.
 - **`outcome: error`:** un `session.error` de un subagente publica `agent.finished` con `outcome: error`. Es la deuda A4-c cerrada en F2: OpenCode expone una señal de falla que Claude Code no da.
-- **Texto para el resumen:** el plugin acumula el último texto por sesión desde `chat.message` y `message.part.updated`, y lo pasa como `last_text`. El mapper de OpenCode no lee transcripts.
+- **Texto para el resumen:** el plugin acumula el último texto de mensajes **assistant** por sesión. El rol se resuelve con `message.updated` (`properties.info.role`) antes de aceptar el `message.part.updated`; un part sin rol conocido se descarta. `chat.message` solo aporta si `output.message.role === 'assistant'` (en la práctica dispara con el prompt del usuario). El mapper de OpenCode no lee transcripts y el prompt nunca sale del proceso.
 - **Límites:** el mapa `sesión hija → agente` es memoria del plugin. Un reload en medio de un run degrada `agent.*` a `unknown`. Si el plugin pierde una actualización de texto, el evento sale sin resumen. Ambos están aceptados en el registro de deuda de A13.
 
 ## 8. Hilos por run (F2)

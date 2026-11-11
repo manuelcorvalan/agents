@@ -31,7 +31,7 @@ const MAX_FILE_BYTES = 65536;
 export const REQUIRED_ROLES = Object.freeze([
   'pm', 'po', 'business', 'backend', 'frontend', 'database', 'data-analyst', 'qa',
   'web-design', 'devops', 'reporting', 'architect', 'security', 'release-manager',
-  'tech-writer', 'cavecrew-reviewer', 'cavecrew-builder', 'cavecrew-investigator', 'unknown',
+  'tech-writer', 'ci', 'cavecrew-reviewer', 'cavecrew-builder', 'cavecrew-investigator', 'unknown',
 ]);
 
 export const DEFAULT_DELIVERY = Object.freeze({ timeout_ms: 5000, max_attempts: 5, per_channel_rate_per_sec: 1 });

@@ -54,16 +54,20 @@ test('should read session identity from both session.created shapes', () => {
   assert.deepEqual(sessionInfoOf({}), { id: '', parentID: undefined, agent: undefined });
 });
 
-test('should only accumulate text parts for the last-text buffer', () => {
-  const update = partTextOf({ properties: { sessionID: 's1', part: { type: 'text', text: 'done', sessionID: 's1' } } });
-  assert.deepEqual(update, { sessionID: 's1', text: 'done' });
-  assert.equal(partTextOf({ properties: { part: { type: 'tool', text: 'x' } } }), undefined);
+test('should only accumulate text parts of assistant messages for the last-text buffer', () => {
+  const event = { properties: { sessionID: 's1', part: { type: 'text', text: 'done', sessionID: 's1', messageID: 'm1' } } };
+  assert.deepEqual(partTextOf(event, 'assistant'), { sessionID: 's1', text: 'done' });
+  assert.equal(partTextOf(event, 'user'), undefined);
+  assert.equal(partTextOf(event, undefined), undefined);
+  assert.equal(partTextOf({ properties: { part: { type: 'tool', text: 'x' } } }, 'assistant'), undefined);
 });
 
-test('should join text parts of a chat.message output', () => {
+test('should join text parts of an assistant chat.message output only', () => {
   const output = { parts: [{ type: 'text', text: 'a' }, { type: 'tool' }, { type: 'text', text: 'b' }] };
-  assert.equal(chatTextOf(output), 'a\nb');
-  assert.equal(chatTextOf(undefined), '');
+  assert.equal(chatTextOf(output, 'assistant'), 'a\nb');
+  assert.equal(chatTextOf(output, 'user'), '');
+  assert.equal(chatTextOf(output, undefined), '');
+  assert.equal(chatTextOf(undefined, 'assistant'), '');
 });
 
 async function waitForMarker(marker, timeoutMs = 3000) {

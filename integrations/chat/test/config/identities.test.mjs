@@ -26,8 +26,9 @@ test('should have an identity for every agents/<role>.md file', () => {
   assert.deepEqual(missing, []);
 });
 
-test('should contain the 15 team roles plus cavecrew-reviewer and unknown', () => {
+test('should contain the 15 team roles plus ci, cavecrew-reviewer and unknown', () => {
   assert.deepEqual(REQUIRED_ROLES.filter((role) => !Object.hasOwn(identities.roles, role)), []);
+  assert.ok(REQUIRED_ROLES.includes('ci'));
 });
 
 test('should alias reviewer to cavecrew-reviewer', () => {
@@ -36,6 +37,7 @@ test('should alias reviewer to cavecrew-reviewer', () => {
 
 const MUTATIONS = {
   'missing required role': (value) => { delete value.roles.qa; },
+  'missing ci role': (value) => { delete value.roles.ci; },
   'alias target missing': (value) => { value.aliases.ghost = 'nobody'; },
   'chained alias': (value) => { value.aliases.rev = 'reviewer'; value.roles.reviewer = { display_name: 'R', icon_emoji: ':x:' }; },
   'display name too long': (value) => { value.roles.qa.display_name = 'x'.repeat(61); },

@@ -1,0 +1,11 @@
+{
+  "type": "message.updated",
+  "properties": {
+    "sessionID": "ses_child",
+    "info": {
+      "id": "msg_assistant_child",
+      "role": "assistant",
+      "sessionID": "ses_child"
+    }
+  }
+}

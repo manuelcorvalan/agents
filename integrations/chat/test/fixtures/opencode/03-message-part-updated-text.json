@@ -4,7 +4,8 @@
     "sessionID": "ses_child",
     "part": {
       "type": "text",
-      "text": "Contract check finished."
+      "text": "Contract check finished.",
+      "messageID": "msg_assistant_child"
     }
   }
 }

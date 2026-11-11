@@ -41,6 +41,7 @@ const identities = loadIdentities();
 const IDENTITY_MUTATIONS = {
   'baseline (shipped file)': () => {},
   'missing required role': (value) => { delete value.roles.qa; },
+  'missing ci role': (value) => { delete value.roles.ci; },
   'missing unknown role': (value) => { delete value.roles.unknown; },
   'extra additive role': (value) => { value.roles['new-role'] = { display_name: 'New', icon_emoji: ':new:' }; },
   'role key too long': (value) => { value.roles['a'.repeat(41)] = { display_name: 'R', icon_emoji: ':x:' }; },

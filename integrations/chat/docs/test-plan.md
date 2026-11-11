@@ -97,7 +97,7 @@ Reglas: determinismo (reloj falso, `random` fijo), aislamiento (tmp dir por test
 - **S13.1 (A13.1 contrato, deuda cerrada)** Given los fixtures sintéticos de `test/fixtures/opencode/` en el orden `tool.execute.before` (input `{agent, description, prompt}`) → `session.created` con `parentID` → `message.part.updated` → `session.idle`, When se ejecutan los handlers reales del plugin (stub de `bin/chat-emit.mjs` captura stdin) y cada payload capturado pasa por `mapOpencodeHook`, Then: handoff (`actor` = `agent` emisor o `pm`, `data.to` normalizado, `task_title` redactado, `span_id` = hash del call id), `agent.started` (`agent_id` = child, `session_id` = root), `agent.finished` con el texto acumulado; los 3 eventos validan contra `event.v1`; `prompt`/`model`/`background` nunca salen del proceso (`PROMPT-SENTINEL-MUST-NOT-LEAVE` ausente del stdin capturado y de los eventos mapeados).
 - **S13.2 (A13.1 root idle)** Given un `session.idle` del root con receipt, Then solo 0..n `gate.result` (sin `agent.finished`), actor `pm` y relay marcado (A8); sin receipt, 0 eventos.
 - **S13.3 (A13.1 error)** Given `session.error` de una child session, Then `agent.finished` con `outcome: "error"` y sin summary (cierra la deuda de A4-c para OpenCode).
-- **S13.4 (A13.1 acumulación de texto)** Given `message.part.updated` (part type `text`) y `chat.message` (`output.parts[].text`), Then el plugin pasa `last_text` al mapper y el summary del `agent.finished` es ese texto; sin texto → `outcome: unknown` y sin summary.
+- **S13.4 (A13.1 acumulación de texto)** Given `message.updated` (rol `assistant`) y `message.part.updated` (part type `text`), Then el plugin pasa `last_text` al mapper y el summary del `agent.finished` es ese texto; un `message.updated`/part de rol `user` (prompt) o un part sin rol conocido no puebla `last_text`; sin texto → `outcome: unknown` y sin summary.
 - **S13.5 (A13.2 threads)** Given un run con `handoff` → `agent.started` → `agent.finished` → `gate.result`, Then el `handoff` abre el thread (`thread_ts` = ts devuelto), `agent.*` responde dentro, `gate.result` va top-level y nunca consulta `threads.json`; un `gate.result` solo no crea `threads.json`; un evento del mismo run en un segundo canal va top-level y no pisa el thread del primero.
 - **S13.6 (A13.2 lifecycle)** Given `threads.json` con entradas viejas, Then al arrancar el sender se podan por `spool.dead_letter_ttl_days`; el thread sobrevive reinicios del sender; dry-run no siembra `threads.json` (A7).
 - **S13.7 (A13.3 mentions)** Given `config.mentions` con roles/aliases allowlisteados, Then solo `handoff` menciona (`data.to` allowlisteado), `agent.*` y `gate.result` no; `<!channel>`/`<!everyone>`/`<!here>`/`<@U…>` en texto libre quedan escapados y nunca producen mención viva; el `<@U…>` construido se re-verifica contra `^U[A-Z0-9]{8,}$`; ≤ 50 entradas (50 aceptadas, 51 rechazadas); claves que no son rol/alias rechazadas; ids inválidos rechazados.
@@ -116,7 +116,7 @@ Reglas: determinismo (reloj falso, `random` fijo), aislamiento (tmp dir por test
 | 6 | Bloqueo de red a nivel proceso | `NODE_OPTIONS=--import=test/helpers/no-network-preload.mjs` | `test/helpers/no-network-preload.mjs` |
 | 7 | Reloj / jitter | `fakeTime()` (sleep avanza el reloj), `random` fijo | `test/helpers/env.mjs` |
 | 8 | `.env` de proyecto | archivo tmp 0600 en `CLAUDE_PROJECT_DIR` tmp (nunca el `.env` real) | `test/e2e/process-pipeline.test.mjs` |
-| 9 | Fixtures de eventos OpenCode (F2) | 6 JSON sintéticos: `tool.execute.before` (input con `agent`/`description`/`prompt`), `session.created` con `parentID`, `message.part.updated`, `session.idle`, `session.error`, `chat.message` | `test/fixtures/opencode/` |
+| 9 | Fixtures de eventos OpenCode (F2) | 9 JSON sintéticos: `tool.execute.before` (input con `agent`/`description`/`prompt`), `session.created` con `parentID`, `message.updated` (assistant/user), `message.part.updated` (assistant/user prompt), `session.idle`, `session.error`, `chat.message` | `test/fixtures/opencode/` |
 
 ## Resultados
 
@@ -131,7 +131,7 @@ Revisión 2 (histórico): 704 tests, 704 pass, 0 fail, 0 todo; 99.40 % / 97.10 %
 | S13.1 | fixture → payload del plugin → `event.v1` válido; prompt fuera | idem; 3 payloads capturados, 3 eventos válidos, sentinel ausente | PASS |
 | S13.2 | root idle → solo `gate.result`, relay marcado | idem | PASS |
 | S13.3 | child `session.error` → `outcome: error` | idem | PASS |
-| S13.4 | `message.part.updated`/`chat.message` alimentan el summary | idem (`Contract check finished.` / `Chat message summary.\nSecond paragraph.`) | PASS |
+| S13.4 | texto assistant alimenta el summary; texto user/prompt no | idem (`Contract check finished.`; prompt descartado) | PASS |
 | S13.5 | thread por run; gate top-level; segundo canal top-level | idem; `gate.result` solo no crea `threads.json` | PASS |
 | S13.6 | prune TTL; thread sobrevive reinicios; dry-run no siembra | idem | PASS |
 | S13.7 | mención solo en handoff allowlisteado; inyección imposible; ≤ 50 | idem en escape/allowlist/límite; alias resuelto a rol al cargar | PASS |

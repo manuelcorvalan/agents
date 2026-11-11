@@ -1,0 +1,11 @@
+{
+  "type": "message.part.updated",
+  "properties": {
+    "sessionID": "ses_child",
+    "part": {
+      "type": "text",
+      "text": "PROMPT-SENTINEL-MUST-NOT-LEAVE",
+      "messageID": "msg_user_prompt"
+    }
+  }
+}

@@ -62,6 +62,7 @@ test('should map a full OpenCode run (handoff, started, finished) from fixture e
   // OpenCode 2.x tool payload: (input, output) with the single event object as input.
   await plugin['tool.execute.before'](fixtures['01-tool-execute-before-subagent']);
   await plugin.event(eventOf(fixtures['02-session-created-child']));
+  await plugin.event(eventOf(fixtures['07-message-updated-assistant']));
   await plugin.event(eventOf(fixtures['03-message-part-updated-text']));
   await plugin.event(eventOf(fixtures['04-session-idle-child']));
 
@@ -107,20 +108,27 @@ test('should map a full OpenCode run (handoff, started, finished) from fixture e
   assert.ok(!JSON.stringify(mapped).includes(PROMPT_SENTINEL));
 });
 
-test('should accumulate summary text from fixture chat.message output (A13.1 debt)', async (t) => {
+test('should never publish user prompt text as the summary (A13.1/D5)', async (t) => {
   const { projectDir, capturePath } = captureProject(t);
   const plugin = await ChatBridgePlugin({ directory: projectDir });
 
   await plugin['tool.execute.before'](fixtures['01-tool-execute-before-subagent']);
   await plugin.event(eventOf(fixtures['02-session-created-child']));
+  // User message and its text part: must stay out of the summary buffer.
+  await plugin.event(eventOf(fixtures['08-message-updated-user']));
+  await plugin.event(eventOf(fixtures['09-message-part-updated-user-prompt']));
   const chat = fixtures['06-chat-message-output'];
-  await plugin['chat.message']({ sessionID: chat.sessionID }, { parts: chat.parts });
+  await plugin['chat.message']({ sessionID: chat.sessionID }, { message: chat.message, parts: chat.parts });
   await plugin.event(eventOf(fixtures['04-session-idle-child']));
 
-  const finished = byEvent(await waitForPayloads(capturePath, 3))['session.idle'];
-  assert.equal(finished.last_text, 'Chat message summary.\nSecond paragraph.');
+  const captured = await waitForPayloads(capturePath, 3);
+  const finished = byEvent(captured)['session.idle'];
+  assert.equal(finished.last_text, undefined);
   const [event] = mapOpencodeHook(finished, context({ lastText: finished.last_text })).events;
-  assert.deepEqual([event.summary, event.data.outcome, validateEvent(event).valid], ['Chat message summary.\nSecond paragraph.', 'success', true]);
+  assert.deepEqual([event.summary, event.data.outcome, validateEvent(event).valid], [undefined, 'unknown', true]);
+  const raw = readFileSync(capturePath, 'utf8');
+  assert.ok(!raw.includes(PROMPT_SENTINEL));
+  assert.ok(!raw.includes('Chat message summary.'));
 });
 
 test('should map a fixture session.error to agent.finished with outcome error', async (t) => {
