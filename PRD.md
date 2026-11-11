@@ -57,7 +57,6 @@ Integración que publica la actividad del equipo de agentes en el chat del equip
   - Emisor como plugin de OpenCode (paridad con Claude Code).
   - Handoffs agrupados en hilos (threads).
   - @mentions a agentes en los mensajes (p. ej. `@reviewer` → `cavecrew-reviewer`, `@qa` → QA, ...).
-  - Link-back a Jira (enlace al issue de la story).
   - Canales por story (opcional).
   - Avatares como imágenes.
 - **F3 — Inbound bidireccional** (`@agente` en Slack → ejecución headless) — **decisiones abiertas, no implementar hasta resolver**:

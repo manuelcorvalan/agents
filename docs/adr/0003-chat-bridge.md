@@ -14,7 +14,7 @@ each agent shown under its own identity (username and icon through
 | Phase | Scope | Risk |
 |-------|-------|------|
 | **F1** | Slack outbound only, emitted from Claude Code hooks | low |
-| **F2** | Discord adapter, OpenCode plugin emitter, Slack threads per run, mentions, Jira links | medium |
+| **F2** | Discord adapter, OpenCode plugin emitter, Slack threads per run, mentions | medium |
 | **F3** | Inbound: `@agent` in Slack starts a headless `claude -p` / `opencode run` | **high** |
 
 The user approved these decisions:
@@ -373,3 +373,7 @@ flowchart LR
 - **Parsing the full transcript (diffs, tool calls) for richer summaries:** more context. Rejected because the user forbids diffs, and it widens the redaction surface and the hook's I/O cost.
 - **Heuristic or LLM-based gate detection:** tolerant of format drift. Rejected because it is non-deterministic and untestable. The receipt formats in `STANDARDS.md` already exist for this.
 - **Emitting `agent.finished` for every main-session `Stop`:** complete. Rejected for default verbosity because it is too noisy. It is available as `verbose`.
+
+## Change log
+
+- **2026-11-11:** Jira link-back removed from scope by user decision.
