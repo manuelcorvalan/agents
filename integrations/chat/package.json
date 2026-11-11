@@ -1,0 +1,23 @@
+{
+  "name": "@opencode-agents/chat-bridge",
+  "version": "0.1.0",
+  "description": "Team chat bridge: agent activity to Slack (ADR-0003). Zero runtime dependencies.",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"node_modules/**\" \"test/**/*.test.mjs\"",
+    "pretest:coverage": "node -e \"require('node:fs').mkdirSync('coverage',{recursive:true})\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"node_modules/**\" --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"test/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "eslint": "10.14.0"
+  }
+}

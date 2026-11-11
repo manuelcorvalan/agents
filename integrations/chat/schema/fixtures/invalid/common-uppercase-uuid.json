@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "event_id": "0B8F3C2E-5D41-8A7E-9C10-4F2B6A1D3E01",
+  "type": "handoff",
+  "occurred_at": "2026-11-11T14:03:22.120Z",
+  "origin": "local",
+  "source": {
+    "platform": "claude-code",
+    "hook": "PreToolUse"
+  },
+  "correlation_id": "7f1e2d3c-4b5a-8697-a8b9-c0d1e2f30415",
+  "actor": "pm",
+  "redaction": {
+    "applied": true,
+    "rules_version": "1.2.0",
+    "truncated": false
+  },
+  "data": {
+    "to": "architect",
+    "task_title": "Design chat bridge ADR"
+  },
+  "story_id": "US-002",
+  "summary": "Validate technical design for chat bridge F1"
+}

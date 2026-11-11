@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-agents.local/integrations/chat/schema/event.v1.schema.json",
+  "title": "Chat Bridge Event v1",
+  "description": "Platform-neutral agent-activity event produced by emitters (Claude Code hooks, OpenCode plugin) and consumed by chat adapters (Slack, Discord). Contract owner: Architect (ADR-0003). Additive optional fields keep schema_version 1; any breaking change requires event.v2.schema.json and schema_version 2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "type",
+    "occurred_at",
+    "origin",
+    "source",
+    "correlation_id",
+    "actor",
+    "redaction",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Major version of this contract. Consumers dead-letter unknown versions.",
+      "const": 1
+    },
+    "event_id": {
+      "description": "Opaque, deterministic UUID (lowercase, hyphenated). Idempotency key for the sender ledger. Derived from a content fingerprint so a re-fired hook or an echoed receipt yields the same id.",
+      "$ref": "#/$defs/uuid"
+    },
+    "type": {
+      "enum": ["handoff", "agent.started", "agent.finished", "gate.result"]
+    },
+    "occurred_at": {
+      "description": "RFC 3339 UTC timestamp set by the emitter.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "origin": {
+      "description": "Where the event originated. 'local' = emitted by an agent runtime on this machine (F1/F2). 'slack' = reserved for F3 inbound-triggered runs.",
+      "enum": ["local", "slack"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "hook"],
+      "properties": {
+        "platform": { "enum": ["claude-code", "opencode"] },
+        "hook": {
+          "description": "Native hook/event name that produced this event (e.g. PreToolUse, SubagentStart, SubagentStop, Stop, or an OpenCode plugin event name).",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._:-]{0,63}$"
+        }
+      }
+    },
+    "correlation_id": {
+      "description": "Opaque id grouping one orchestration run (Claude Code: hashed root session_id). F2 maps correlation_id -> thread_ts.",
+      "$ref": "#/$defs/uuid"
+    },
+    "span_id": {
+      "description": "Optional opaque id of the unit of work inside the run (hashed tool_use_id / agent_id). Never the raw native id.",
+      "$ref": "#/$defs/uuid"
+    },
+    "actor": {
+      "description": "Role whose identity posts the message. Must resolve in identities.json (roles or aliases); unknown values are normalized to 'unknown' by the emitter BEFORE spooling.",
+      "$ref": "#/$defs/role"
+    },
+    "story_id": {
+      "type": "string",
+      "pattern": "^US-[0-9]{3,6}$"
+    },
+    "summary": {
+      "description": "Redacted, truncated plain text. Hard cap 2000 chars; effective cap comes from config.redaction.max_summary_chars (default 500). Never contains diffs or code blocks.",
+      "type": "string",
+      "maxLength": 2000
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applied", "rules_version", "truncated"],
+      "properties": {
+        "applied": {
+          "description": "Must be true: the spool never holds unredacted text.",
+          "const": true
+        },
+        "rules_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "truncated": { "type": "boolean" },
+        "summary_dropped": {
+          "description": "True when redaction failed closed and the summary was removed.",
+          "type": "boolean"
+        }
+      }
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "handoff" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/handoffData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "agent.started" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/agentStartedData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "agent.finished" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/agentFinishedData" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "gate.result" } } },
+      "then": {
+        "required": ["span_id"],
+        "properties": {
+          "span_id": { "$ref": "#/$defs/uuid" },
+          "data": { "$ref": "#/$defs/gateResultData" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "role": {
+      "description": "kebab-case role id (e.g. pm, backend, cavecrew-reviewer, unknown).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "maxLength": 40
+    },
+    "handoffData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["to"],
+      "properties": {
+        "to": { "$ref": "#/$defs/role" },
+        "task_title": {
+          "description": "Redacted Task/Agent tool 'description' (short title). The prompt body is NEVER forwarded.",
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "agentStartedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parent": {
+          "description": "Role that spawned this agent, when known.",
+          "$ref": "#/$defs/role"
+        }
+      }
+    },
+    "agentFinishedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "enum": ["success", "error", "unknown"] },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "gateResultData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "verdict", "raw_verdict"],
+      "properties": {
+        "gate": { "enum": ["review", "dod", "security", "ci"] },
+        "verdict": {
+          "description": "Normalized verdict: pass = APPROVED/DONE/PASS; fail = CHANGES REQUESTED/NOT DONE/BLOCKED/FAIL.",
+          "enum": ["pass", "fail"]
+        },
+        "raw_verdict": {
+          "type": "string",
+          "enum": ["APPROVED", "CHANGES REQUESTED", "DONE", "NOT DONE", "BLOCKED", "PASS", "FAIL"]
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "blocking": { "type": "integer", "minimum": 0 },
+            "warning": { "type": "integer", "minimum": 0 },
+            "nit": { "type": "integer", "minimum": 0 },
+            "high": { "type": "integer", "minimum": 0 },
+            "critical": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "release": {
+          "type": "string",
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.-]+)?$"
+        }
+      }
+    }
+  }
+}

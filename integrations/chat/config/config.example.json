@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "provider": "slack",
+  "dry_run": true,
+  "verbosity": "default",
+  "default_channel": "C0000000000",
+  "channels": { "gate.result": "C0000000001" },
+  "redaction": {
+    "max_summary_chars": 500,
+    "max_lines": 8,
+    "max_task_title_chars": 120,
+    "strip_code_blocks": true,
+    "strip_diffs": true,
+    "mask_home_paths": true,
+    "extra_patterns": []
+  },
+  "delivery": { "timeout_ms": 5000, "max_attempts": 5, "per_channel_rate_per_sec": 1 },
+  "spool": { "dir": ".chat-bridge", "max_bytes": 5242880, "dead_letter_ttl_days": 7 }
+}

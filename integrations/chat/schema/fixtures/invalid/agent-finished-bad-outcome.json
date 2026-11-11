@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "event_id": "0b8f3c2e-5d41-8a7e-9c10-4f2b6a1d3e05",
+  "type": "agent.finished",
+  "occurred_at": "2026-11-11T14:03:22.120Z",
+  "origin": "local",
+  "source": {
+    "platform": "claude-code",
+    "hook": "SubagentStop"
+  },
+  "correlation_id": "7f1e2d3c-4b5a-8697-a8b9-c0d1e2f30415",
+  "actor": "architect",
+  "redaction": {
+    "applied": true,
+    "rules_version": "1.2.0",
+    "truncated": true
+  },
+  "data": {
+    "outcome": "ok",
+    "duration_ms": 184000
+  },
+  "span_id": "1a2b3c4d-5e6f-8071-8293-a4b5c6d7e8f9",
+  "summary": "Wrote ADR-0003 and event.v1 schema. Token [REDACTED:slack-token] removed. Path ~/agents/docs/adr."
+}

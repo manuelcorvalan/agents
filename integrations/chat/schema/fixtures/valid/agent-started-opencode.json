@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "event_id": "0b8f3c2e-5d41-8a7e-9c10-4f2b6a1d3e04",
+  "type": "agent.started",
+  "occurred_at": "2026-11-11T14:03:22.120Z",
+  "origin": "local",
+  "source": {
+    "platform": "opencode",
+    "hook": "session.created"
+  },
+  "correlation_id": "7f1e2d3c-4b5a-8697-a8b9-c0d1e2f30415",
+  "actor": "backend",
+  "redaction": {
+    "applied": true,
+    "rules_version": "1.2.0",
+    "truncated": false
+  },
+  "data": {}
+}

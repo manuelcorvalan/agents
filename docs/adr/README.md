@@ -50,3 +50,4 @@ If the decision is local, cheap to reverse, and confined to one module — skip 
 |-----|-------|--------|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | accepted |
 | [0002](0002-serena-vs-codegraph.md) | Serena vs CodeGraph for semantic code intelligence | proposed |
+| [0003](0003-chat-bridge.md) | Team Chat Bridge (agent activity to Slack, then Discord and inbound) | accepted |

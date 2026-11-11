@@ -1,0 +1,27 @@
+# Slack app manifest — Team Chat Bridge F1 (ADR-0003 D12/D14)
+#
+# Outbound only: el bridge solo llama a chat.postMessage.
+# Scopes de bot: SOLO chat:write y chat:write.customize.
+# Sin Socket Mode, sin Event Subscriptions, sin interactividad, sin slash commands.
+# No agregar scopes (chat:write.public, *:history, *:read, app_mentions:read,
+# connections:write): F1 no los usa y ampliarlos requiere enmienda del ADR.
+# F3 (inbound) usará una app y un token separados.
+#
+# Uso: https://api.slack.com/apps -> Create New App -> From a manifest -> pegar este archivo.
+display_information:
+  name: Agent Team Bridge
+  description: Publica la actividad del equipo de agentes (handoffs, inicio/fin, gates). Solo salida.
+  background_color: "#2c2d30"
+features:
+  bot_user:
+    display_name: agent-team-bridge
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.customize
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

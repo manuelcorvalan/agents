@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "suffix": " (agent)",
+  "default": { "display_name": "Agent Team", "icon_emoji": ":robot_face:" },
+  "aliases": { "reviewer": "cavecrew-reviewer", "tech-lead": "architect", "release": "release-manager", "writer": "tech-writer" },
+  "roles": {
+    "pm":                    { "display_name": "PM",               "icon_emoji": ":clipboard:" },
+    "po":                    { "display_name": "PO",               "icon_emoji": ":dart:" },
+    "business":              { "display_name": "Business",         "icon_emoji": ":briefcase:" },
+    "backend":               { "display_name": "Backend",          "icon_emoji": ":gear:" },
+    "frontend":              { "display_name": "Frontend",         "icon_emoji": ":art:" },
+    "database":              { "display_name": "Database",         "icon_emoji": ":floppy_disk:" },
+    "data-analyst":          { "display_name": "Data Analyst",     "icon_emoji": ":bar_chart:" },
+    "qa":                    { "display_name": "QA",               "icon_emoji": ":test_tube:" },
+    "web-design":            { "display_name": "Web Design",       "icon_emoji": ":lower_left_paintbrush:" },
+    "devops":                { "display_name": "DevOps",           "icon_emoji": ":rocket:" },
+    "reporting":             { "display_name": "Reporting",        "icon_emoji": ":newspaper:" },
+    "architect":             { "display_name": "Architect",        "icon_emoji": ":building_construction:" },
+    "security":              { "display_name": "Security",         "icon_emoji": ":shield:" },
+    "release-manager":       { "display_name": "Release Manager",  "icon_emoji": ":label:" },
+    "tech-writer":           { "display_name": "Technical Writer", "icon_emoji": ":memo:" },
+    "cavecrew-reviewer":     { "display_name": "Reviewer",         "icon_emoji": ":mag:" },
+    "cavecrew-builder":      { "display_name": "Builder",          "icon_emoji": ":hammer:" },
+    "cavecrew-investigator": { "display_name": "Investigator",     "icon_emoji": ":compass:" },
+    "unknown":               { "display_name": "Agent",            "icon_emoji": ":grey_question:" }
+  }
+}

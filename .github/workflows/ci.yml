@@ -7,9 +7,11 @@
 #
 # Required checks (block merge): set them in GitHub →
 #   Settings → Branches → Branch protection → "Require status checks"
-#   Enable: lint, test, secret-scan, audit.
+#   Enable: lint, test, secret-scan, audit, chat-bridge.
 # A PR cannot merge until all four checks are green.
 # =============================================================================
+# Root jobs (lint/test/audit) skip their steps when no root package.json
+# exists (steps-level hashFiles guard; job still reports green).
 
 name: CI
 
@@ -42,15 +44,18 @@ jobs:
 
       # ADAPT: replace with your runtime (e.g. actions/setup-python, -go, -java).
       - uses: actions/setup-node@v4
+        if: hashFiles('package.json') != ''
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        if: hashFiles('package.json') != ''
         run: npm ci
 
       # ADAPT: replace with your linter (ruff check ., golangci-lint run, ...).
       - name: Run lint
+        if: hashFiles('package.json') != ''
         run: npm run lint
 
   # ---------------------------------------------------------------------------
@@ -63,15 +68,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
+        if: hashFiles('package.json') != ''
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        if: hashFiles('package.json') != ''
         run: npm ci
 
       # ADAPT: your test runner (pytest, go test ./..., cargo test, ...).
       - name: Run tests
+        if: hashFiles('package.json') != ''
         run: npm test
 
   # ---------------------------------------------------------------------------
@@ -101,17 +109,63 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
+        if: hashFiles('package.json') != ''
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        if: hashFiles('package.json') != ''
         run: npm ci
 
       # ADAPT: fail on high/critical only (npm audit --audit-level=high).
       # Python: pip-audit; Go: govulncheck ./...; Rust: cargo audit.
       - name: Audit dependencies
+        if: hashFiles('package.json') != ''
         run: npm audit --audit-level=high
+
+  # ---------------------------------------------------------------------------
+  # Chat bridge — integrations/chat (ADR-0003 D1/D13). Node 24 (Active LTS).
+  # Zero runtime deps; devDeps only. Blocks on lint errors, any test failure,
+  # coverage < 80% lines/branches, or high/critical CVEs.
+  # Secret-scan above already covers integrations/chat/** (full-repo gitleaks).
+  # Required check name: "chat-bridge".
+  # ---------------------------------------------------------------------------
+  chat-bridge:
+    name: Chat Bridge (lint, test+coverage, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/chat
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: integrations/chat/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test + coverage (>= 80% lines/branches)
+        run: npm run test:coverage
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-bridge-coverage
+          path: integrations/chat/coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 7
 
   # ---------------------------------------------------------------------------
   # Build (optional) — compile/package artifact. Enable if your stack builds.

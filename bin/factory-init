@@ -3,7 +3,8 @@
 # factory-init — scaffold a project for the opencode-agents software factory
 # =============================================================================
 # Usage:
-#   factory-init <project-path> [--dry-run]
+#   factory-init <project-path> [--dry-run] [--with-plugins]
+#                [--with-ponytail] [--with-caveman] [--with-rtk]
 #
 # What it does:
 #   1. Symlinks this factory's agents/   -> ~/.config/opencode/agents
@@ -12,6 +13,8 @@
 #   2. Copies .env.example -> <project>/.env  (only if .env does NOT exist).
 #   3. Copies templates/    -> <project>/templates/  (PRD, etc.).
 #   4. Runs `codegraph init` inside the project if the codegraph CLI exists.
+#   5. Installs optional plugins (ponytail, caveman, RTK) when requested
+#      with --with-plugins (or the per-plugin flags). Skips what is missing.
 #
 # Claude Code alternative (NOT symlinked into ~/.config):
 #   ln -s <factory-root>/.claude  <project>/.claude
@@ -32,19 +35,28 @@ FACTORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # --- Config (override via env) -----------------------------------------------
 OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
 DRY_RUN=0
+WITH_PONYTAIL=0
+WITH_CAVEMAN=0
+WITH_RTK=0
 
 usage() {
   cat <<'EOF'
-Usage: factory-init <project-path> [--dry-run]
+Usage: factory-init <project-path> [--dry-run] [--with-plugins]
+                               [--with-ponytail] [--with-caveman] [--with-rtk]
 
 Scaffold <project-path> to use the opencode-agents software factory.
 
   <project-path>   Target project directory (created if missing).
   --dry-run        Print actions without executing them.
+  --with-plugins   Install all optional plugins (ponytail + caveman + RTK).
+  --with-ponytail  Install ponytail (OpenCode + Claude Code).
+  --with-caveman   Install caveman (OpenCode + Claude Code).
+  --with-rtk       Wire RTK for OpenCode and Claude Code.
 
 Examples:
   factory-init ~/code/my-app
-  factory-init ~/code/my-app --dry-run
+  factory-init ~/code/my-app --with-plugins
+  factory-init ~/code/my-app --dry-run --with-ponytail
 EOF
 }
 
@@ -58,6 +70,10 @@ PROJECT=""
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY_RUN=1 ;;
+    --with-plugins) WITH_PONYTAIL=1; WITH_CAVEMAN=1; WITH_RTK=1 ;;
+    --with-ponytail) WITH_PONYTAIL=1 ;;
+    --with-caveman) WITH_CAVEMAN=1 ;;
+    --with-rtk) WITH_RTK=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) usage; exit 1 ;;
     *) [[ -n "$PROJECT" ]] && { usage; exit 1; }; PROJECT="$a" ;;
@@ -87,16 +103,16 @@ symlink() { # $1=source(abs) $2=dest(abs)
   local src="$1" dst="$2"
   if [[ -L "$dst" ]]; then
     log "refresh symlink: $dst -> $src"
-    [[ $DRY_RUN -eq 0 ]] && ln -sfn "$src" "$dst"
+    if [[ $DRY_RUN -eq 0 ]]; then ln -sfn "$src" "$dst"; fi
   elif [[ -e "$dst" ]]; then
     local bak="${dst}.bak.$(date +%s)"
     warn "backup existing non-symlink: $dst -> $bak"
-    [[ $DRY_RUN -eq 0 ]] && mv "$dst" "$bak"
+    if [[ $DRY_RUN -eq 0 ]]; then mv "$dst" "$bak"; fi
     log "create symlink: $dst -> $src"
-    [[ $DRY_RUN -eq 0 ]] && ln -s "$src" "$dst"
+    if [[ $DRY_RUN -eq 0 ]]; then ln -s "$src" "$dst"; fi
   else
     log "create symlink: $dst -> $src"
-    [[ $DRY_RUN -eq 0 ]] && ln -s "$src" "$dst"
+    if [[ $DRY_RUN -eq 0 ]]; then ln -s "$src" "$dst"; fi
   fi
 }
 
@@ -106,8 +122,40 @@ copy_if_missing() { # $1=src $2=dst
     log "skip (exists): $dst"
   else
     log "copy: $src -> $dst"
-    [[ $DRY_RUN -eq 0 ]] && cp "$src" "$dst"
+    if [[ $DRY_RUN -eq 0 ]]; then cp "$src" "$dst"; fi
   fi
+}
+
+run_soft() { # optional/network command: log, run, warn on failure (never abort)
+  log "run: $*"
+  if [[ $DRY_RUN -eq 0 ]]; then
+    "$@" || warn "falló: $* (continuando)"
+  fi
+}
+
+install_caveman_opencode() { # caveman refuses symlinked target dirs; stage in a temp dir, then merge
+  local tmp
+  tmp="$(mktemp -d)"
+  log "run: OPENCODE_CONFIG_DIR=$tmp npx -y github:JuliusBrussee/caveman -- --only opencode"
+  log "merge: <tmp>/{plugins/caveman,skills,AGENTS.md} -> $OPENCODE_CONFIG_DIR"
+  log "merge: <tmp>/commands/*.md -> $FACTORY_ROOT/commands"
+  [[ $DRY_RUN -eq 0 ]] || { return 0; }
+
+  if ! env OPENCODE_CONFIG_DIR="$tmp" npx -y github:JuliusBrussee/caveman -- --only opencode; then
+    warn "falló: caveman (OpenCode) — continuando"
+    rm -rf "$tmp"
+    return 0
+  fi
+
+  mkdir -p "$OPENCODE_CONFIG_DIR/plugins/caveman" "$OPENCODE_CONFIG_DIR/skills" "$FACTORY_ROOT/commands"
+  cp -R "$tmp/plugins/caveman/." "$OPENCODE_CONFIG_DIR/plugins/caveman/"
+  cp -R "$tmp/skills/." "$OPENCODE_CONFIG_DIR/skills/"
+  cp "$tmp/AGENTS.md" "$OPENCODE_CONFIG_DIR/AGENTS.md"
+  cp "$tmp/.caveman-opencode-ownership.json" "$OPENCODE_CONFIG_DIR/"
+  cp "$tmp/commands/"*.md "$FACTORY_ROOT/commands/"
+  rm -rf "$tmp"
+  # OpenCode auto-loads $OPENCODE_CONFIG_DIR/plugins/* — no opencode.json patch needed.
+  log "caveman listo (plugin + skills + AGENTS.md + commands)"
 }
 
 # --- Main --------------------------------------------------------------------
@@ -117,13 +165,13 @@ log "opencode cfg : $OPENCODE_CONFIG_DIR"
 
 # 1. OpenCode global symlinks (agents + commands)
 log "== OpenCode symlinks =="
-[[ $DRY_RUN -eq 0 ]] && mkdir -p "$OPENCODE_CONFIG_DIR"
+if [[ $DRY_RUN -eq 0 ]]; then mkdir -p "$OPENCODE_CONFIG_DIR"; fi
 symlink "$FACTORY_ROOT/agents"   "$OPENCODE_CONFIG_DIR/agents"
 symlink "$FACTORY_ROOT/commands" "$OPENCODE_CONFIG_DIR/commands"
 
 # 2. Ensure project dir exists
 log "== Project scaffold =="
-[[ $DRY_RUN -eq 0 ]] && mkdir -p "$PROJECT"
+if [[ $DRY_RUN -eq 0 ]]; then mkdir -p "$PROJECT"; fi
 
 # 3. .env (never overwrite an existing one)
 copy_if_missing "$FACTORY_ROOT/.env.example" "$PROJECT/.env"
@@ -133,19 +181,61 @@ if [[ -e "$PROJECT/templates" ]]; then
   log "skip (exists): $PROJECT/templates"
 else
   log "copy: $FACTORY_ROOT/templates -> $PROJECT/templates"
-  [[ $DRY_RUN -eq 0 ]] && cp -R "$FACTORY_ROOT/templates" "$PROJECT/templates"
+  if [[ $DRY_RUN -eq 0 ]]; then cp -R "$FACTORY_ROOT/templates" "$PROJECT/templates"; fi
 fi
 
 # 5. codegraph init (project) — only if CLI present
 log "== CodeGraph index =="
 if command -v codegraph >/dev/null 2>&1; then
   log "codegraph detected — indexing project"
-  [[ $DRY_RUN -eq 0 ]] && (cd "$PROJECT" && codegraph init)
+  if [[ $DRY_RUN -eq 0 ]]; then (cd "$PROJECT" && codegraph init); fi
 else
   warn "codegraph CLI not found — skipping (install: npm i -g @colbymchenry/codegraph)"
 fi
 
-# 6. Claude Code alternative (documented, not automated)
+# 6. Optional plugins (opt-in: --with-plugins / --with-<plugin>)
+if [[ $WITH_PONYTAIL -eq 1 || $WITH_CAVEMAN -eq 1 || $WITH_RTK -eq 1 ]]; then
+  log "== Plugins (opcional) =="
+fi
+
+if [[ $WITH_PONYTAIL -eq 1 ]]; then
+  if command -v opencode >/dev/null 2>&1; then
+    run_soft opencode plugin add @dietrichgebert/ponytail
+  else
+    warn "opencode no encontrado — salto ponytail (OpenCode)"
+  fi
+  if command -v claude >/dev/null 2>&1; then
+    run_soft claude plugin marketplace add DietrichGebert/ponytail
+    run_soft claude plugin install ponytail@ponytail
+  else
+    warn "claude no encontrado — salto ponytail (Claude Code)"
+  fi
+fi
+
+if [[ $WITH_CAVEMAN -eq 1 ]]; then
+  if command -v npx >/dev/null 2>&1; then
+    install_caveman_opencode
+  else
+    warn "npx no encontrado — salto caveman (OpenCode)"
+  fi
+  if command -v claude >/dev/null 2>&1; then
+    run_soft claude plugin marketplace add JuliusBrussee/caveman
+    run_soft claude plugin install caveman@caveman
+  else
+    warn "claude no encontrado — salto caveman (Claude Code)"
+  fi
+fi
+
+if [[ $WITH_RTK -eq 1 ]]; then
+  if command -v rtk >/dev/null 2>&1; then
+    run_soft rtk init -g --opencode
+    if command -v claude >/dev/null 2>&1; then run_soft rtk init -g; fi
+  else
+    warn "rtk no encontrado — instalalo con: brew install rtk (o cargo install rtk)"
+  fi
+fi
+
+# 7. Claude Code alternative (documented, not automated)
 log "== Claude Code =="
 cat <<EOF
   Claude Code does NOT use ~/.config symlinks. Wire the factory manually:
