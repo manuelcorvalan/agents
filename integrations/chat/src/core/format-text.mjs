@@ -2,6 +2,8 @@
 import { GATE_OWNERS } from './detect-gates.mjs';
 import { displayNameOf } from './normalize-role.mjs';
 
+export const SLACK_USER_ID = /^U[A-Z0-9]{8,}$/;
+
 const GATE_LABELS = Object.freeze({ review: 'Code review', dod: 'Definition of Done', security: 'Security', ci: 'CI' });
 const COUNT_LABELS = Object.freeze({ blocking: 'blocking', warning: 'warning', nit: 'nit', high: 'high', critical: 'critical' });
 
@@ -58,4 +60,18 @@ export function formatText(event, identities) {
   if (event.summary) lines.push(event.summary);
   if (event.redaction?.summary_dropped) lines.push('(summary withheld by redaction)');
   return lines.join('\n');
+}
+
+/**
+ * Allowlisted mention target (A13.3): only a handoff to an allowlisted role/alias.
+ * Returns the Slack user id (re-verified), never a rendered token or free text.
+ * @param {object} event event.v1 (already redacted)
+ * @param {object} mentions config.mentions map (role/alias -> user id)
+ */
+export function mentionTarget(event, mentions) {
+  if (event.type !== 'handoff' || !mentions || typeof mentions !== 'object') return undefined;
+  const target = event.data?.to;
+  if (typeof target !== 'string' || !Object.hasOwn(mentions, target)) return undefined;
+  const userId = mentions[target];
+  return typeof userId === 'string' && SLACK_USER_ID.test(userId) ? userId : undefined;
 }

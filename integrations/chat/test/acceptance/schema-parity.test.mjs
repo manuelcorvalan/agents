@@ -95,6 +95,9 @@ const CONFIG_MUTATIONS = {
   'empty redaction': (c) => { c.redaction = {}; },
   'empty spool': (c) => { c.spool = {}; },
   'dry_run null': (c) => { c.dry_run = null; },
+  'mentions not object': (c) => { c.mentions = []; },
+  '51 mentions': (c) => { c.mentions = Object.fromEntries(Array.from({ length: 51 }, (_, index) => [`r${index}`, 'U0123ABCDE'])); },
+  'bad mention user id': (c) => { c.mentions = { qa: 'u0123abcde' }; },
   // runtime-only: regex compilability cannot be expressed in JSON Schema.
   'uncompilable regex pattern': (c) => { c.redaction.extra_patterns = ['(']; },
 };
@@ -107,4 +110,10 @@ test('parity: config runtime validator agrees with ajv except regex compilabilit
     return { label, ajv: ajvConfig(value), runtime: validateConfig(value).length === 0 };
   });
   assert.deepEqual(results.filter((r) => r.ajv !== r.runtime).map((r) => r.label), CONFIG_RUNTIME_ONLY);
+});
+
+// A13.3 runtime-only rule: mentions keys must exist in identities.json (a second file).
+test('parity: mention keys are cross-checked against identities by the loader only', () => {
+  const config = { ...example, mentions: { ghost: 'U0123ABCDE' } };
+  assert.deepEqual([validateConfig(config), ajvConfig(config), validateConfig(config, loadIdentities())], [[], true, ['mentions.ghost: not a role or alias']]);
 });

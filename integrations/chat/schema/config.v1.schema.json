@@ -17,6 +17,13 @@
       "propertyNames": { "enum": ["handoff", "agent.started", "agent.finished", "gate.result"] },
       "additionalProperties": { "$ref": "#/$defs/channelId" }
     },
+    "mentions": {
+      "description": "A13.3: role/alias -> Slack user id. Keys must exist in identities.json (runtime rule).",
+      "type": "object",
+      "maxProperties": 50,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
+      "additionalProperties": { "$ref": "#/$defs/slackUserId" }
+    },
     "redaction": {
       "type": "object",
       "additionalProperties": false,
@@ -59,6 +66,7 @@
     }
   },
   "$defs": {
-    "channelId": { "type": "string", "pattern": "^[CDG][A-Z0-9]{8,}$" }
+    "channelId": { "type": "string", "pattern": "^[CDG][A-Z0-9]{8,}$" },
+    "slackUserId": { "type": "string", "pattern": "^U[A-Z0-9]{8,}$" }
   }
 }

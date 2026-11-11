@@ -315,7 +315,7 @@ const GATE_RECEIPTS = {
   dod: 'DoD \u2014 US-010 Sender\nRESULTADO: DONE',
   security: SECURITY_RECEIPT,
 };
-for (const [gate, owner] of Object.entries(GATE_OWNERS)) {
+for (const [gate, owner] of Object.entries(GATE_OWNERS).filter(([gate]) => Object.hasOwn(GATE_RECEIPTS, gate))) {
   test(`should attribute a ${gate} receipt to ${owner} only when ${owner} emits it (A8)`, () => {
     const sighting = (agentType) => mapClaudeHook({ session_id: 's', hook_event_name: 'SubagentStop', agent_id: agentType, agent_type: agentType }, { ...mapContext, lastText: GATE_RECEIPTS[gate] }).events[1];
     const fromOwner = sighting(owner);
@@ -327,8 +327,8 @@ for (const [gate, owner] of Object.entries(GATE_OWNERS)) {
   });
 }
 
-test('should not define a release gate owner in F1 (A8 amended)', () => {
-  assert.deepEqual(Object.keys(GATE_OWNERS).sort(), ['dod', 'review', 'security']);
+test('should define the text-detected gates plus the structured ci gate only (A8/A13.4)', () => {
+  assert.deepEqual(Object.keys(GATE_OWNERS).sort(), ['ci', 'dod', 'review', 'security']);
 });
 
 // ---- Re-review 🔴: symlinked parent dir ----

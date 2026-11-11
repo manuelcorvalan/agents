@@ -45,6 +45,21 @@ test('should write zero stdout bytes, exit 0 and spool when enabled', (t) => {
   assert.deepEqual([result.status, result.stdout.length, readSafe(join(spoolDir, 'outbox.jsonl')).split('\n').filter(Boolean).length], [0, 0, 1]);
 });
 
+test('should spool a platform opencode payload through the process entry', (t) => {
+  const { env, spoolDir, root } = bridgeEnv(t);
+  holdLock(spoolDir);
+  const { CLAUDE_PROJECT_DIR: _unused, ...withoutClaude } = env;
+  const payload = JSON.stringify({
+    platform: 'opencode', event: 'session.created', session_id: 'root', agent_id: 'child-1', agent_type: 'qa',
+  });
+  const result = runBin(EMIT_BIN, { ...withoutClaude, CHAT_BRIDGE_PROJECT_DIR: root }, payload);
+  const [record] = readSafe(join(spoolDir, 'outbox.jsonl')).split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  assert.deepEqual(
+    [result.status, result.stdout.length, record.event.source.platform, record.event.type],
+    [0, 0, 'opencode', 'agent.started'],
+  );
+});
+
 test('should write zero stdout bytes and exit 0 when stdin is garbage', (t) => {
   const { env } = bridgeEnv(t);
   const result = runBin(EMIT_BIN, env, '\u0000not json');

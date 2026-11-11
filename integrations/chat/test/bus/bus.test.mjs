@@ -77,7 +77,7 @@ test('should report missing for absent paths when asserting regular file', (t) =
 });
 
 test('should list all spool file paths', () => {
-  assert.deepEqual(Object.keys(spoolPaths('/x')).sort(), ['bridgeLog', 'cursor', 'deadLetter', 'dir', 'dryRunLog', 'ledger', 'lock', 'outbox'].sort());
+  assert.deepEqual(Object.keys(spoolPaths('/x')).sort(), ['bridgeLog', 'cursor', 'deadLetter', 'dir', 'dryRunLog', 'ledger', 'lock', 'outbox', 'threads'].sort());
 });
 
 test('should serialize a bus_v 1 record line', () => {

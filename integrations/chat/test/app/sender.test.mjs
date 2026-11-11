@@ -6,6 +6,7 @@ import { backoffDelay, createSender, parseSpoolLine, prepareForRender, runSender
 import { runEmit } from '../../src/app/emit.mjs';
 import { ensureSpoolDir, readSafe, spoolPaths, appendSafe } from '../../src/bus/safe-fs.mjs';
 import { serializeRecord } from '../../src/bus/spool.mjs';
+import { loadThreads, saveThreads } from '../../src/bus/threads.mjs';
 import { bridgeEnv, fakeTime } from '../helpers/env.mjs';
 import { FAKE_SLACK_TOKEN, exampleSettings, loadFixtures, loadIdentities, makeTmpDir } from '../helpers/fixtures.mjs';
 
@@ -186,8 +187,108 @@ test('should reject a null record when parsing', () => {
   assert.deepEqual(parseSpoolLine('null'), { reason: 'unknown_bus_version' });
 });
 
-// ---- runSender (process entry) ----
+// ---- A13.2 threads ----
 
+test('should open one thread per run and reply into it, never threading gate.result', async (t) => {
+  const { sender, enqueue, sent, paths } = setup(t);
+  enqueue(
+    withId(fixtures['handoff-basic'], '01'),
+    withId(fixtures['agent-started-basic'], '02'),
+    withId(fixtures['agent-finished-success'], '03'),
+    withId(fixtures['gate-result-dod'], '04'),
+  );
+  await sender.run();
+  assert.deepEqual(sent.map((entry) => entry.ctx.thread_ref), [undefined, '1', '1', undefined]);
+  assert.deepEqual(loadThreads(paths.threads), {
+    [fixtures['handoff-basic'].correlation_id]: {
+      provider: 'fake', channel: 'C0000000000', thread_ref: '1', created_at: '2026-11-11T14:00:00.000Z',
+    },
+  });
+});
+
+test('should post top-level in a second channel and keep the run thread in the first', async (t) => {
+  const settings = exampleSettings({ channels: { 'agent.started': 'C1111111111' } });
+  const { sender, enqueue, sent, paths } = setup(t, { settings });
+  enqueue(
+    withId(fixtures['handoff-basic'], '01'),
+    withId(fixtures['agent-started-basic'], '02'),
+    withId(fixtures['agent-finished-success'], '03'),
+  );
+  await sender.run();
+  assert.deepEqual(sent.map((entry) => [entry.ctx.channel, entry.ctx.thread_ref]), [
+    ['C0000000000', undefined], ['C1111111111', undefined], ['C0000000000', '1'],
+  ]);
+  assert.deepEqual(loadThreads(paths.threads)[fixtures['handoff-basic'].correlation_id].channel, 'C0000000000');
+});
+
+test('should not thread a gate.result even when a run thread exists', async (t) => {
+  const { sender, enqueue, sent, paths } = setup(t);
+  saveThreads(paths.threads, {
+    [fixtures['gate-result-dod'].correlation_id]: { provider: 'fake', channel: 'C0000000000', thread_ref: '7.7', created_at: '2026-11-11T00:00:00.000Z' },
+  });
+  enqueue(withId(fixtures['gate-result-dod'], '01'));
+  await sender.run();
+  assert.equal(sent[0].ctx.thread_ref, undefined);
+});
+
+test('should keep the thread across sender restarts', async (t) => {
+  const paths = spoolPaths(ensureSpoolDir(join(makeTmpDir(t), 'spool')));
+  const time = fakeTime();
+  const sent = [];
+  const adapter = {
+    name: 'fake',
+    async send(event, ctx) {
+      sent.push(ctx);
+      return { ok: true, provider: 'fake', channel: ctx.channel, message_ref: `ts-${sent.length}` };
+    },
+  };
+  const deps = { settings: exampleSettings(), identities, paths, adapter, clock: time.clock, sleep: time.sleep, log: () => {} };
+  appendSafe(paths.outbox, serializeRecord(withId(fixtures['handoff-basic'], '01'), 'T'));
+  await createSender(deps).run();
+  appendSafe(paths.outbox, serializeRecord(withId(fixtures['agent-started-basic'], '02'), 'T'));
+  await createSender(deps).run();
+  assert.deepEqual(sent.map((ctx) => ctx.thread_ref), [undefined, 'ts-1']);
+});
+
+test('should prune expired threads at sender start', async (t) => {
+  const { env, spoolDir } = bridgeEnv(t);
+  ensureSpoolDir(spoolDir);
+  saveThreads(join(spoolDir, 'threads.json'), {
+    old: { provider: 'slack', channel: 'C0000000000', thread_ref: '1.0', created_at: '2020-01-01T00:00:00.000Z' },
+    fresh: { provider: 'slack', channel: 'C0000000000', thread_ref: '2.0', created_at: '2026-11-10T00:00:00.000Z' },
+  });
+  const time = fakeTime();
+  await runSender({ env, clock: time.clock, sleep: time.sleep });
+  assert.deepEqual(Object.keys(loadThreads(join(spoolDir, 'threads.json'))), ['fresh']);
+});
+
+test('should not record a thread for the dry-run provider', async (t) => {
+  const paths = spoolPaths(ensureSpoolDir(join(makeTmpDir(t), 'spool')));
+  const time = fakeTime();
+  const threadsUsed = [];
+  const adapter = {
+    name: 'dry-run',
+    async send(event, ctx) {
+      threadsUsed.push(ctx.thread_ref);
+      return { ok: true, provider: 'dry-run', channel: ctx.channel, message_ref: `dry-run-${threadsUsed.length}` };
+    },
+  };
+  const sender = createSender({ settings: exampleSettings(), identities, paths, adapter, clock: time.clock, sleep: time.sleep, log: () => {} });
+  appendSafe(paths.outbox, serializeRecord(withId(fixtures['handoff-basic'], '01'), 'T'));
+  appendSafe(paths.outbox, serializeRecord(withId(fixtures['agent-started-basic'], '02'), 'T'));
+  await sender.run();
+  assert.deepEqual([existsSync(paths.threads), threadsUsed], [false, [undefined, undefined]]);
+});
+
+test('should set ctx.mention from the allowlist for a handoff only', async (t) => {
+  const settings = exampleSettings({ mentions: { architect: 'U0123ABCDE' } });
+  const { sender, enqueue, sent } = setup(t, { settings });
+  enqueue(withId(fixtures['handoff-basic'], '01'), withId(fixtures['agent-started-basic'], '02'), withId(fixtures['gate-result-dod'], '03'));
+  await sender.run();
+  assert.deepEqual(sent.map((entry) => entry.ctx.mention), ['U0123ABCDE', undefined, undefined]);
+});
+
+// ---- runSender (process entry) ----
 function fakeSlackFetch(responses = []) {
   const calls = [];
   const fetchImpl = async (url, init) => {

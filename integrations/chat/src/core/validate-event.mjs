@@ -127,7 +127,7 @@ export function validateEvent(event) {
     if (!isPlainObject(source)) errors.push('source: invalid');
     else {
       checkKeys(source, ['platform', 'hook'], 'source', errors);
-      if (!['claude-code', 'opencode'].includes(source.platform)) errors.push('source.platform: invalid');
+      if (!['claude-code', 'opencode', 'ci'].includes(source.platform)) errors.push('source.platform: invalid');
       if (typeof source.hook !== 'string' || !HOOK.test(source.hook)) errors.push('source.hook: invalid');
     }
   }

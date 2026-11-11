@@ -3,11 +3,16 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fitToLine, isBridgeEnabled, main, readStdin, resolveLastText, runEmit } from '../../src/app/emit.mjs';
+import {
+  fitToLine, isBridgeEnabled, main, readStdin, resolveLastText, resolvePayloadText, runEmit, selectMapper,
+} from '../../src/app/emit.mjs';
+import { mapClaudeHook } from '../../src/core/map-claude-hook.mjs';
+import { mapCiReceipt } from '../../src/core/map-ci-hook.mjs';
+import { mapOpencodeHook } from '../../src/core/map-opencode-hook.mjs';
 import { readSafe } from '../../src/bus/safe-fs.mjs';
 import { validateEvent } from '../../src/core/validate-event.mjs';
 import { bridgeEnv } from '../helpers/env.mjs';
-import { FAKE_SLACK_TOKEN, loadFixtures } from '../helpers/fixtures.mjs';
+import { FAKE_SLACK_TOKEN, loadFixtures, makeTmpDir } from '../helpers/fixtures.mjs';
 
 const handoffPayload = {
   session_id: 'sess-1', transcript_path: '/nonexistent', cwd: '/tmp', hook_event_name: 'PreToolUse',
@@ -145,6 +150,89 @@ test('should fall back to transcript text for SubagentStop when message is empty
 
 test('should return undefined text for other hooks', () => {
   assert.equal(resolveLastText({ hook_event_name: 'PreToolUse' }), undefined);
+});
+
+test('should select the OpenCode mapper only for platform opencode', () => {
+  assert.deepEqual(
+    [
+      selectMapper({ platform: 'opencode' }),
+      selectMapper({ platform: 'claude-code' }),
+      selectMapper({}),
+      selectMapper(null),
+    ],
+    [mapOpencodeHook, mapClaudeHook, mapClaudeHook, mapClaudeHook],
+  );
+});
+
+test('should select the CI mapper for platform ci (A13.4)', () => {
+  assert.equal(selectMapper({ platform: 'ci' }), mapCiReceipt);
+  assert.equal(selectMapper({ platform: 'ci', gate: 'ci' }), mapCiReceipt);
+});
+
+test('should spool a structured CI receipt as a gate.result from ci', (t) => {
+  const { env, spoolDir } = bridgeEnv(t);
+  const payload = {
+    platform: 'ci', session_id: 'ci:4242', gate: 'ci', verdict: 'pass', raw_verdict: 'PASS',
+    release: 'v1.2.3', counts: { high: 0, critical: 0 }, summary: 'CI: build success',
+  };
+  const result = runEmit({ stdinText: JSON.stringify(payload), env, spawnSender: () => {} });
+  const [record] = spooled(spoolDir);
+  assert.deepEqual(
+    [result.spooled, record.event.type, record.event.source.platform, record.event.source.hook, record.event.actor, record.event.data.gate, validateEvent(record.event).valid],
+    [1, 'gate.result', 'ci', 'ci', 'ci', 'ci', true],
+  );
+});
+
+test('should take last_text from an OpenCode payload and never read a transcript', () => {
+  const readTailImpl = () => { throw new Error('must not read a transcript'); };
+  assert.deepEqual(
+    [
+      resolvePayloadText({ platform: 'opencode', last_text: 'hi' }, readTailImpl),
+      resolvePayloadText({ platform: 'opencode' }, readTailImpl),
+    ],
+    ['hi', undefined],
+  );
+});
+
+test('should spool an OpenCode handoff without the prompt body', (t) => {
+  const { env, spoolDir } = bridgeEnv(t);
+  const payload = {
+    platform: 'opencode', event: 'tool.execute.before', session_id: 'root', tool: 'subagent',
+    tool_call_id: 'call-1', tool_input: { agent: 'qa', description: 'Test US-010', prompt: 'SECRET PROMPT BODY' },
+  };
+  const result = runEmit({ stdinText: JSON.stringify(payload), env, spawnSender: () => {} });
+  const [record] = spooled(spoolDir);
+  assert.deepEqual(
+    [result.spooled, record.event.source.platform, record.event.source.hook, record.event.data.to, validateEvent(record.event).valid],
+    [1, 'opencode', 'tool.execute.before', 'qa', true],
+  );
+  assert.ok(!readSafe(join(spoolDir, 'outbox.jsonl')).includes('SECRET PROMPT BODY'));
+});
+
+test('should spool an OpenCode child idle as agent.finished using last_text', (t) => {
+  const { env, spoolDir } = bridgeEnv(t);
+  const payload = {
+    platform: 'opencode', event: 'session.idle', session_id: 'root', agent_id: 'child-1',
+    agent_type: 'backend', last_text: 'Work done',
+  };
+  runEmit({ stdinText: JSON.stringify(payload), env, spawnSender: () => {} });
+  const [record] = spooled(spoolDir);
+  assert.deepEqual(
+    [record.event.type, record.event.source.platform, record.event.data.outcome, record.event.summary],
+    ['agent.finished', 'opencode', 'success', 'Work done'],
+  );
+});
+
+test('should prefer CHAT_BRIDGE_PROJECT_DIR over CLAUDE_PROJECT_DIR for the sender project dir', (t) => {
+  const { env, configPath } = bridgeEnv(t);
+  const opencodeDir = makeTmpDir(t);
+  const spawns = [];
+  const result = runEmit({
+    stdinText: JSON.stringify(handoffPayload), configPath,
+    env: { ...env, CLAUDE_PROJECT_DIR: makeTmpDir(t), CHAT_BRIDGE_PROJECT_DIR: opencodeDir },
+    spawnSender: (args) => spawns.push(args),
+  });
+  assert.deepEqual([result.spooled, spawns[0].projectDir], [1, opencodeDir]);
 });
 
 test('should read stdin fully when under the cap', async () => {

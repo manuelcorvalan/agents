@@ -4,6 +4,8 @@ import { spawn } from 'node:child_process';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mapClaudeHook } from '../core/map-claude-hook.mjs';
+import { CI_PLATFORM, mapCiReceipt } from '../core/map-ci-hook.mjs';
+import { mapOpencodeHook, OPENCODE_PLATFORM } from '../core/map-opencode-hook.mjs';
 import { validateEvent } from '../core/validate-event.mjs';
 import { shouldSend } from '../core/routing.mjs';
 import { DEFAULT_SPOOL, loadBridgeConfig, logConfigDetails, resolveSpoolDir } from '../config/load-config.mjs';
@@ -40,6 +42,25 @@ export function fitToLine(event, enqueuedAt) {
     line = serializeRecord(fitted, enqueuedAt);
   }
   return { event: fitted, line };
+}
+
+/**
+ * Platform discriminator (ADR A13.1/A13.4): "opencode" selects the plugin mapper,
+ * "ci" the structured CI receipt mapper, anything else (absent included) keeps
+ * the Claude Code path unchanged.
+ */
+export function selectMapper(payload) {
+  if (payload?.platform === OPENCODE_PLATFORM) return mapOpencodeHook;
+  if (payload?.platform === CI_PLATFORM) return mapCiReceipt;
+  return mapClaudeHook;
+}
+
+/** Text for summary + gate detection; OpenCode has no transcript, the plugin passes it. */
+export function resolvePayloadText(payload, readTailImpl = readTail) {
+  if (payload?.platform === OPENCODE_PLATFORM) {
+    return typeof payload.last_text === 'string' ? payload.last_text : undefined;
+  }
+  return resolveLastText(payload, readTailImpl);
 }
 
 /** Resolve the text used for summary + gate detection. */
@@ -104,10 +125,10 @@ export function runEmit({
       return { spooled: 0, reason: 'stdin_not_json' };
     }
     // Review: never derive the project dir from hook stdin `cwd` (D15). Without an absolute
-    // CLAUDE_PROJECT_DIR no .env is loaded anywhere; spool/config fall back to process.cwd().
-    const projectDir = typeof env.CLAUDE_PROJECT_DIR === 'string' && isAbsolute(env.CLAUDE_PROJECT_DIR)
-      ? env.CLAUDE_PROJECT_DIR
-      : undefined;
+    // project dir no .env is loaded anywhere; spool/config fall back to process.cwd().
+    // A13.1: CHAT_BRIDGE_PROJECT_DIR (OpenCode plugin) first, then CLAUDE_PROJECT_DIR.
+    const projectDir = [env.CHAT_BRIDGE_PROJECT_DIR, env.CLAUDE_PROJECT_DIR]
+      .find((value) => typeof value === 'string' && isAbsolute(value));
     const baseDir = projectDir ?? process.cwd();
     if (!projectDir) bufferedLogs = [...bufferedLogs, ['info', 'no_project_dir']];
     let loaded;
@@ -133,13 +154,13 @@ export function runEmit({
     flush(log);
 
     const timestamp = now().toISOString();
-    const { events, notes } = mapClaudeHook(payload, {
+    const { events, notes } = selectMapper(payload)(payload, {
       identities,
       redaction: settings.redaction,
       extraPatterns: settings.extraPatterns,
       verbosity: settings.verbosity,
       now: timestamp,
-      lastText: resolveLastText(payload, readTailImpl),
+      lastText: resolvePayloadText(payload, readTailImpl),
     });
     for (const note of notes) if (note !== 'hook_ignored') log('info', note);
 

@@ -9,6 +9,7 @@ export const GATE_OWNERS = Object.freeze({
   review: 'cavecrew-reviewer',
   dod: 'qa',
   security: 'security',
+  ci: 'ci',
 });
 
 const HEADERS = [

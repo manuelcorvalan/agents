@@ -164,9 +164,12 @@ export function loadEnv({
  */
 export function resolveEmitterEnv(processEnv, options = {}) {
   const logs = [];
+  // A13.1: the OpenCode plugin passes CHAT_BRIDGE_PROJECT_DIR; Claude keeps CLAUDE_PROJECT_DIR.
+  const projectDir = [processEnv.CHAT_BRIDGE_PROJECT_DIR, processEnv.CLAUDE_PROJECT_DIR]
+    .find((value) => typeof value === 'string' && isAbsolute(value));
   const env = loadEnv({
     ...options,
-    projectDir: processEnv.CLAUDE_PROJECT_DIR,
+    projectDir,
     processEnv,
     allowlist: EMITTER_ALLOWLIST,
     log: (level, code) => logs.push([level, code]),

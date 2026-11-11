@@ -76,6 +76,59 @@ test('should reject a non-object config', () => {
   assert.deepEqual(validateConfig([]), ['config: not an object']);
 });
 
+// ---- A13.3 controlled mentions ----
+
+const MENTIONS = Object.freeze({ reviewer: 'U0123ABCDE', qa: 'U0456EFGHI' });
+
+test('should accept a valid mentions block in both validators and resolve it into settings', () => {
+  const config = { ...example, mentions: MENTIONS };
+  assert.deepEqual([validateConfig(config), ajvValidate(config)], [[], true]);
+  assert.deepEqual(resolveSettings(config, {}).mentions, MENTIONS);
+});
+
+test('should default mentions to an empty map', () => {
+  assert.deepEqual(resolveSettings({ version: 1, provider: 'slack', default_channel: 'C0123456789' }, {}).mentions, {});
+});
+
+test('should reject a mention key that is not a role or alias when loading', (t) => {
+  const config = { ...example, mentions: { ghost: 'U0123ABCDE' } };
+  // Runtime-only rule: JSON Schema cannot cross-reference identities.json.
+  assert.deepEqual([validateConfig(config), ajvValidate(config)], [[], true]);
+  const configPath = join(makeTmpDir(t), 'config.json');
+  writeFileSync(configPath, JSON.stringify(config));
+  assert.throws(
+    () => loadBridgeConfig({ configPath }),
+    (error) => error instanceof ConfigError
+      && error.code === 'config_invalid'
+      && error.details.includes('mentions.ghost: not a role or alias'),
+  );
+});
+
+for (const [label, value] of [['lowercase', 'u0123abcde'], ['channel id', 'C0123ABCDE'], ['too short', 'U1'], ['mrkdwn', '<!channel>']]) {
+  test(`should reject a mention value that is ${label}`, () => {
+    const config = { ...example, mentions: { qa: value } };
+    assert.deepEqual([validateConfig(config).length > 0, ajvValidate(config)], [true, false]);
+  });
+}
+
+test('should reject more than 50 mentions entries', () => {
+  const mentions = Object.fromEntries(Array.from({ length: 51 }, (_, index) => [`r${index}`, 'U0123ABCDE']));
+  const config = { ...example, mentions };
+  assert.deepEqual([validateConfig(config).length > 0, ajvValidate(config)], [true, false]);
+});
+
+test('should reject a mentions block that is not an object', () => {
+  for (const mentions of [[], null, 'x']) {
+    const config = { ...example, mentions };
+    assert.deepEqual([validateConfig(config).length > 0, ajvValidate(config)], [true, false]);
+  }
+});
+
+test('should reject a mention key with an invalid shape', () => {
+  const config = { ...example, mentions: { 'Bad Key': 'U0123ABCDE' } };
+  assert.deepEqual([validateConfig(config).length > 0, ajvValidate(config)], [true, false]);
+});
+
 test('should detect a token pattern when scanning for secrets', () => {
   assert.equal(containsSecret(`{"x":"${FAKE_SLACK_TOKEN}"}`), true);
 });

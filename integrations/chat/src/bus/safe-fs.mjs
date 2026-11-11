@@ -4,7 +4,7 @@ import {
   chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync,
   writeSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 export const DIR_MODE = 0o700;
@@ -34,6 +34,31 @@ function realParentStat(dir) {
   }
 }
 
+function isWorldWritableNonSticky(stat) {
+  return Boolean(stat) && (stat.mode & 0o002) !== 0 && (stat.mode & 0o1000) === 0;
+}
+
+/**
+ * Security L2 (A13.5): walk every ancestor above the immediate parent, from the
+ * spool dir's realpath up to the filesystem root. A world-writable component
+ * without the sticky bit is refused. realpath keeps a symlinked project dir valid.
+ */
+function assertAncestorChainSafe(dir) {
+  let current = dirname(dirname(realpathSync(dir)));
+  const { root } = parse(current);
+  for (;;) {
+    let stat;
+    try {
+      stat = statSync(current);
+    } catch {
+      return;
+    }
+    if (isWorldWritableNonSticky(stat)) throw new UnsafePathError('spool_parent_world_writable');
+    if (current === root) return;
+    current = dirname(current);
+  }
+}
+
 /**
  * Create (or verify) the spool directory. Rejects symlinks and non-directories,
  * a dir owned by another uid, and (Security L2) a world-writable parent without sticky bit.
@@ -50,9 +75,9 @@ export function ensureSpoolDir(dir, { getuid = process.getuid } = {}) {
   // symlink must judge the real directory, not the link's own 0777 lstat mode.
   // The spool dir itself is still lstat-checked above and must not be a symlink.
   const parent = realParentStat(dir);
-  if (parent && (parent.mode & 0o002) !== 0 && (parent.mode & 0o1000) === 0) {
-    throw new UnsafePathError('spool_parent_world_writable');
-  }
+  if (isWorldWritableNonSticky(parent)) throw new UnsafePathError('spool_parent_world_writable');
+  // A13.5: the full ancestor chain, not just the immediate parent.
+  assertAncestorChainSafe(dir);
   if ((stat.mode & 0o777) !== DIR_MODE) chmodSync(dir, DIR_MODE);
   return dir;
 }
@@ -133,6 +158,7 @@ export function spoolPaths(dir) {
     cursor: join(dir, 'cursor.json'),
     ledger: join(dir, 'ledger.jsonl'),
     deadLetter: join(dir, 'dead-letter.jsonl'),
+    threads: join(dir, 'threads.json'),
     lock: join(dir, 'sender.lock'),
     bridgeLog: join(dir, 'bridge.log'),
     dryRunLog: join(dir, 'dry-run.log'),

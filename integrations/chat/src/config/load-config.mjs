@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULT_REDACTION, TOKEN_PATTERNS, compileExtraPatterns } from '../core/redact.mjs';
 import { EVENT_TYPES, isPlainObject } from '../core/validate-event.mjs';
 import { VERBOSITY_LEVELS } from '../core/routing.mjs';
+import { SLACK_USER_ID } from '../core/format-text.mjs';
 
 export const PACKAGE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const DEFAULT_CONFIG_PATH = join(PACKAGE_DIR, 'config', 'config.json');
@@ -35,6 +36,7 @@ export const REQUIRED_ROLES = Object.freeze([
 
 export const DEFAULT_DELIVERY = Object.freeze({ timeout_ms: 5000, max_attempts: 5, per_channel_rate_per_sec: 1 });
 export const DEFAULT_SPOOL = Object.freeze({ dir: '.chat-bridge', max_bytes: 5242880, dead_letter_ttl_days: 7 });
+export const MAX_MENTIONS = 50;
 
 export class ConfigError extends Error {
   constructor(code, details = []) {
@@ -94,13 +96,35 @@ export function validateIdentities(identities) {
   return errors;
 }
 
-/** @returns {string[]} errors (empty when valid) */
-export function validateConfig(config) {
+/**
+ * A13.3: mention keys must be a role or alias from identities.json.
+ * The structural rules (object, max entries, user-id shape) live in validateConfig.
+ * @returns {string[]} errors (empty when valid)
+ */
+export function validateMentions(mentions, identities) {
+  const errors = [];
+  if (!isPlainObject(mentions)) return ['mentions: not an object'];
+  const known = new Set([
+    ...(isPlainObject(identities?.roles) ? Object.keys(identities.roles) : []),
+    ...(isPlainObject(identities?.aliases) ? Object.keys(identities.aliases) : []),
+  ]);
+  for (const key of Object.keys(mentions)) {
+    if (!known.has(key)) errors.push(`mentions.${key}: not a role or alias`);
+  }
+  return errors;
+}
+
+/**
+ * @param {object} config
+ * @param {object} [identities] when provided, mentions keys are also cross-checked (A13.3)
+ * @returns {string[]} errors (empty when valid)
+ */
+export function validateConfig(config, identities) {
   const errors = [];
   if (!isPlainObject(config)) return ['config: not an object'];
   unknownKeys(
     config,
-    ['version', 'provider', 'dry_run', 'verbosity', 'default_channel', 'channels', 'redaction', 'delivery', 'spool'],
+    ['version', 'provider', 'dry_run', 'verbosity', 'default_channel', 'channels', 'mentions', 'redaction', 'delivery', 'spool'],
     'config',
     errors,
   );
@@ -118,6 +142,21 @@ export function validateConfig(config) {
         if (!EVENT_TYPES.includes(type)) errors.push(`channels.${type}: unknown event type`);
         if (typeof channel !== 'string' || !CHANNEL_ID.test(channel)) errors.push(`channels.${type}: invalid channel id`);
       }
+    }
+  }
+  if ('mentions' in config) {
+    const mentions = config.mentions;
+    if (!isPlainObject(mentions)) errors.push('mentions: not an object');
+    else {
+      const keys = Object.keys(mentions);
+      if (keys.length > MAX_MENTIONS) errors.push(`mentions: max ${MAX_MENTIONS} entries`);
+      for (const key of keys) {
+        if (!ROLE_KEY.test(key) || key.length > 40) errors.push(`mentions.${key}: invalid key`);
+        if (typeof mentions[key] !== 'string' || !SLACK_USER_ID.test(mentions[key])) {
+          errors.push(`mentions.${key}: invalid user id`);
+        }
+      }
+      if (identities) errors.push(...validateMentions(mentions, identities));
     }
   }
   if ('redaction' in config) {
@@ -217,6 +256,7 @@ export function resolveSettings(config, env = {}) {
     verbosity: config.verbosity ?? 'default',
     default_channel: defaultChannel,
     channels,
+    mentions: { ...(config.mentions ?? {}) },
     redaction,
     extraPatterns: compileExtraPatterns(redaction.extra_patterns),
     delivery: { ...DEFAULT_DELIVERY, ...(config.delivery ?? {}) },
@@ -254,6 +294,8 @@ export function loadBridgeConfig({ env = {}, configPath, identitiesPath, project
   const identities = readJson(identitiesPath ?? DEFAULT_IDENTITIES_PATH, 'identities');
   const identityErrors = validateIdentities(identities);
   if (identityErrors.length > 0) throw new ConfigError('identities_invalid', identityErrors);
+  const mentionErrors = config.mentions === undefined ? [] : validateMentions(config.mentions, identities);
+  if (mentionErrors.length > 0) throw new ConfigError('config_invalid', mentionErrors);
   return { settings: resolveSettings(config, env), identities };
 }
 

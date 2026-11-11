@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { loadBridgeConfig, logConfigDetails, resolveSpoolDir } from '../config/load-config.mjs';
 import { SENDER_ALLOWLIST, loadEnv } from '../config/load-env.mjs';
 import { redactSummary, redactTaskTitle } from '../core/redact.mjs';
+import { mentionTarget } from '../core/format-text.mjs';
 import { resolveIdentity } from '../core/normalize-role.mjs';
 import { routeChannel, shouldSend } from '../core/routing.mjs';
 import { validateEvent } from '../core/validate-event.mjs';
@@ -16,6 +17,7 @@ import { loadLedger, pruneLedger, recordSent } from '../bus/ledger.mjs';
 import { HEARTBEAT_INTERVAL_MS, acquireLock } from '../bus/lock.mjs';
 import { createLogger } from '../bus/log.mjs';
 import { ensureSpoolDir, spoolPaths } from '../bus/safe-fs.mjs';
+import { findThread, loadThreads, pruneThreads, recordThread, saveThreads } from '../bus/threads.mjs';
 import { BUS_VERSION, readCursor, readNewLines, removeFile, rotateOutbox, writeCursor } from '../bus/spool.mjs';
 
 export const IDLE_EXIT_MS = 2000;
@@ -52,6 +54,11 @@ export function parseSpoolLine(text, oversized = false) {
   return { event };
 }
 
+/** A13.2: handoff opens the run thread; agent.started/finished reply into it; gate.result never threads. */
+export function isThreadEvent(event) {
+  return event.type === 'handoff' || event.type === 'agent.started' || event.type === 'agent.finished';
+}
+
 /** Sender-side second redaction pass on a copy (the spooled event is never mutated). */
 export function prepareForRender(event, settings) {
   const copy = structuredClone(event);
@@ -82,6 +89,7 @@ export function createSender({
   settings, identities, paths, adapter, clock, sleep, random = Math.random, log, shouldStop = () => false,
 }) {
   const sent = loadLedger(paths.ledger);
+  const threads = loadThreads(paths.threads);
   const lastSentAt = new Map();
   const intervalMs = 1000 / settings.delivery.per_channel_rate_per_sec;
   const stats = { sent: 0, skipped: 0, filtered: 0, dead: 0 };
@@ -102,11 +110,17 @@ export function createSender({
   async function deliver(event) {
     const channel = routeChannel(event, settings);
     const renderEvent = prepareForRender(event, settings);
+    const runEvent = isThreadEvent(event);
+    // A13.2: gate.result never consults threads.json.
+    const thread = runEvent ? findThread(threads, event.correlation_id, channel) : undefined;
+    const mention = mentionTarget(renderEvent, settings.mentions);
     const ctx = {
       identity: resolveIdentity(event.actor, identities),
       channel,
       timeout_ms: settings.delivery.timeout_ms,
     };
+    if (thread) ctx.thread_ref = thread.thread_ref;
+    if (mention) ctx.mention = mention;
     const maxAttempts = settings.delivery.max_attempts;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       await throttle(channel);
@@ -133,6 +147,18 @@ export function createSender({
           message_ref: result.message_ref,
           sent_at: new Date(clock()).toISOString(),
         });
+        // A13.2: the opener's returned ts becomes the run's thread_ref. The dry-run
+        // adapter returns a synthetic ref, not a Slack ts, so it never seeds threads.json.
+        if (runEvent && !thread && typeof result.message_ref === 'string' && result.provider !== 'dry-run') {
+          const written = recordThread(threads, {
+            correlation_id: event.correlation_id,
+            provider: result.provider,
+            channel: result.channel ?? channel,
+            thread_ref: result.message_ref,
+            created_at: new Date(clock()).toISOString(),
+          });
+          if (written) saveThreads(paths.threads, threads);
+        }
         stats.sent += 1;
         return;
       }
@@ -379,6 +405,7 @@ async function drainOnce({ paths, settings, identities, adapter, clock, sleep, r
   try {
     pruneDeadLetter(paths.deadLetter, settings.spool.dead_letter_ttl_days, new Date(clock()));
     pruneLedger(paths.ledger, new Date(clock()));
+    pruneThreads(paths.threads, settings.spool.dead_letter_ttl_days, new Date(clock()));
     const sender = createSender({
       settings, identities, paths, adapter, clock, sleep, random, log, shouldStop: () => isLockLost,
     });

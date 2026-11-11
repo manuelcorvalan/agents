@@ -53,8 +53,10 @@ test('should render seconds only when duration is under a minute', () => {
 });
 
 test('should render a ci gate without scope when formatting', () => {
-  const event = { ...fixtures['gate-result-dod'], story_id: undefined, data: { gate: 'ci', verdict: 'pass', raw_verdict: 'PASS' } };
+  const event = { ...fixtures['gate-result-dod'], story_id: undefined, actor: 'ci', data: { gate: 'ci', verdict: 'pass', raw_verdict: 'PASS' } };
   assert.equal(formatText(event, identities), 'CI gate: PASS [PASS]');
+  const relayed = { ...event, actor: 'pm' };
+  assert.equal(formatText(relayed, identities), 'Relayed (unverified): CI gate: PASS [PASS]');
 });
 
 test('should render a generic line when type is unknown', () => {

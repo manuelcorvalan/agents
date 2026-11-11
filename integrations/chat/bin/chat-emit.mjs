@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Claude Code hook entry (ADR-0003 D2/D5/D15). Thin wrapper: logic in src/.
+// Emit entry for all emitters (Claude Code hooks, OpenCode plugin, CI). ADR-0003 D2/D5/A13.1/D15.
+// Thin wrapper: logic in src/. The stdin payload `platform` field selects the mapper.
 // Contract: ZERO bytes to stdout, always exit 0, 1500 ms internal deadline.
 // Fast path: CHAT_BRIDGE_ENABLED defined and not "true" -> exit, nothing imported.
 // Undefined -> resolve via .env (emitter allowlist, no token) and proceed only if "true".

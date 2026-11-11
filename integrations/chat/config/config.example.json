@@ -5,6 +5,7 @@
   "verbosity": "default",
   "default_channel": "C0000000000",
   "channels": { "gate.result": "C0000000001" },
+  "mentions": {},
   "redaction": {
     "max_summary_chars": 500,
     "max_lines": 8,

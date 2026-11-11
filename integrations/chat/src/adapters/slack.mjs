@@ -1,6 +1,6 @@
 // Slack adapter (ADR-0003 D7/D8): chat.postMessage via native fetch.
 // MUST NOT throw. Never logs or returns the token, headers or err.cause.
-import { formatText } from '../core/format-text.mjs';
+import { formatText, SLACK_USER_ID } from '../core/format-text.mjs';
 import { escapeMrkdwn } from '../core/redact.mjs';
 
 export const SLACK_ENDPOINT = 'https://slack.com/api/chat.postMessage';
@@ -52,7 +52,10 @@ export function escapeAndCap(plain, maxChars = MAX_BLOCK_TEXT_CHARS) {
 
 /** Build the chat.postMessage body (pure). */
 export function renderSlackPayload(event, ctx, identities) {
-  const text = escapeAndCap(formatText(event, identities));
+  // A13.3: <@U…> is built only from the sender-resolved allowlist id, after escaping,
+  // and the id is re-verified here. Free text can never produce a live mention.
+  const mention = typeof ctx.mention === 'string' && SLACK_USER_ID.test(ctx.mention) ? ` <@${ctx.mention}>` : '';
+  const text = escapeAndCap(formatText(event, identities), MAX_BLOCK_TEXT_CHARS - mention.length) + mention;
   const payload = {
     channel: ctx.channel,
     text,

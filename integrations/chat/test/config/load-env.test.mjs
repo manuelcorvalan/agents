@@ -139,6 +139,12 @@ test('should never offer the token through resolveEmitterEnv', (t) => {
   assert.deepEqual([isEnabled, 'SLACK_BOT_TOKEN' in env], [true, false]);
 });
 
+test('should prefer CHAT_BRIDGE_PROJECT_DIR over CLAUDE_PROJECT_DIR in resolveEmitterEnv', (t) => {
+  const dir = project(t, 'CHAT_BRIDGE_ENABLED=true\n');
+  const { isEnabled } = resolveEmitterEnv({ CHAT_BRIDGE_PROJECT_DIR: dir, CLAUDE_PROJECT_DIR: join(dir, 'missing') });
+  assert.equal(isEnabled, true);
+});
+
 test('should report disabled from resolveEmitterEnv when .env does not enable', (t) => {
   const dir = project(t, 'CHAT_BRIDGE_ENABLED=false\n');
   assert.equal(resolveEmitterEnv({ CLAUDE_PROJECT_DIR: dir }).isEnabled, false);

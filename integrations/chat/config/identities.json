@@ -22,6 +22,7 @@
     "cavecrew-reviewer":     { "display_name": "Reviewer",         "icon_emoji": ":mag:" },
     "cavecrew-builder":      { "display_name": "Builder",          "icon_emoji": ":hammer:" },
     "cavecrew-investigator": { "display_name": "Investigator",     "icon_emoji": ":compass:" },
-    "unknown":               { "display_name": "Agent",            "icon_emoji": ":grey_question:" }
+    "unknown":               { "display_name": "Agent",            "icon_emoji": ":grey_question:" },
+    "ci":                    { "display_name": "CI",               "icon_emoji": ":robot_face:" }
   }
 }

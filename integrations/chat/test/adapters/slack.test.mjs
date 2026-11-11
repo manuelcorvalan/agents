@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import {
-  SLACK_ENDPOINT, createSlackAdapter, isAllowedEndpoint, parseRetryAfter, renderSlackPayload,
+  SLACK_ENDPOINT, createSlackAdapter, isAllowedEndpoint, MAX_BLOCK_TEXT_CHARS, parseRetryAfter, renderSlackPayload,
 } from '../../src/adapters/slack.mjs';
 import { createDryRunAdapter } from '../../src/adapters/dry-run.mjs';
 import { readSafe } from '../../src/bus/safe-fs.mjs';
@@ -79,6 +79,26 @@ test('should escape mrkdwn so mentions cannot be injected', () => {
   const evil = { ...event, summary: '<!channel> hi <@U123> & <https://x|y>' };
   const payload = renderSlackPayload(evil, ctx, identities);
   assert.ok(!payload.text.includes('<') && payload.blocks[0].text.text === payload.text);
+});
+
+test('should append an allowlisted mention after escaping agent text', () => {
+  const evil = { ...event, summary: '<!channel> hi <@U99999999>' };
+  const payload = renderSlackPayload(evil, { ...ctx, mention: 'U0123ABCDE' }, identities);
+  assert.deepEqual(
+    [payload.text.endsWith(' <@U0123ABCDE>'), payload.text.includes('&lt;!channel&gt;'), payload.text.includes('<@U99999999>'), payload.blocks[0].text.text],
+    [true, true, false, payload.text],
+  );
+});
+
+test('should ignore a mention that is not an allowlisted Slack user id', () => {
+  const rendered = ['<!channel>', 'U1', 'u0123abcde', undefined].map((mention) => renderSlackPayload(event, { ...ctx, mention }, identities).text);
+  assert.deepEqual(rendered.every((text) => !text.includes('<@')), true);
+});
+
+test('should reserve the mention length inside the block text cap', () => {
+  const long = { ...event, summary: '<&>'.repeat(2000) };
+  const payload = renderSlackPayload(long, { ...ctx, mention: 'U0123ABCDE' }, identities);
+  assert.deepEqual([payload.text.length <= MAX_BLOCK_TEXT_CHARS, payload.text.endsWith(' <@U0123ABCDE>')], [true, true]);
 });
 
 test('should drop an invalid icon_emoji when rendering', () => {

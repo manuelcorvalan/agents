@@ -66,7 +66,8 @@ test('should deliver handoff, start, finish and gate from hooks to mock Slack wi
       [request.method, request.path, request.headers['content-type'], request.headers.authorization],
       ['POST', '/api/chat.postMessage', 'application/json; charset=utf-8', `Bearer ${FAKE_SLACK_TOKEN}`],
     );
-    assert.deepEqual(Object.keys(request.body).sort(), BODY_KEYS);
+    // A13.2: run replies add thread_ts; gate.result stays top-level without it.
+    assert.deepEqual(Object.keys(request.body).filter((key) => key !== 'thread_ts').sort(), BODY_KEYS);
     assert.deepEqual([request.body.link_names, request.body.unfurl_links, request.body.unfurl_media], [false, false, false]);
     assert.match(request.body.username, / \(agent\)$/);
     assert.equal(request.body.blocks[0].text.text, request.body.text);
@@ -78,6 +79,7 @@ test('should deliver handoff, start, finish and gate from hooks to mock Slack wi
     ['QA (agent)', ':test_tube:', 'C0000000001'],
   ]);
   assert.equal(bodies[0].text, 'Handoff to QA: Verify US-005');
+  assert.deepEqual(bodies.map((body) => body.thread_ts), [undefined, '1.000100', '1.000100', undefined]);
   assert.match(bodies[3].text, /^Definition of Done gate US-005: PASS \[DONE\]/);
   assert.match(bodies[2].text, /\[REDACTED:slack-token\]/);
   // US-008/009: no corpus secret, prompt or token anywhere: spool, payloads, ledger, logs.

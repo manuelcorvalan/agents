@@ -44,7 +44,7 @@
       "additionalProperties": false,
       "required": ["platform", "hook"],
       "properties": {
-        "platform": { "enum": ["claude-code", "opencode"] },
+        "platform": { "enum": ["claude-code", "opencode", "ci"] },
         "hook": {
           "description": "Native hook/event name that produced this event (e.g. PreToolUse, SubagentStart, SubagentStop, Stop, or an OpenCode plugin event name).",
           "type": "string",
