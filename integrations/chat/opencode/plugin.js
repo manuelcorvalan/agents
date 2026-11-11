@@ -4,6 +4,12 @@
 // spawns `node <project>/integrations/chat/bin/chat-emit.mjs` with it on stdin.
 // Never blocks, never writes to stdout, never throws into OpenCode.
 //
+// Security gate: the plugin is installed globally, so it does nothing unless
+// CHAT_BRIDGE_ENABLED is exactly "true" in the OpenCode process environment.
+// This prevents a malicious repo from getting arbitrary node execution by
+// shipping integrations/chat/bin/chat-emit.mjs. chat-emit.mjs still resolves
+// .env/config authoritatively for the dry-run and logging decisions.
+//
 // Install: symlink this directory to ~/.config/opencode/plugins/chat-bridge/.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -77,8 +83,11 @@ export function chatTextOf(output) {
 }
 
 export const ChatBridgePlugin = async (ctx) => {
-  // A13.1: the plugin always emits; bin/chat-emit.mjs resolves enable/.env/config
-  // authoritatively (OpenCode does not load .env). A disabled bridge fast-exits there.
+  // RCE guard: return before resolving projectDir or touching workspace code.
+  // Without this, any repo shipping integrations/chat/bin/chat-emit.mjs would
+  // execute node with the user's privileges as soon as OpenCode opens it.
+  // bin/chat-emit.mjs still resolves .env/config authoritatively once spawned.
+  if (process.env.CHAT_BRIDGE_ENABLED !== 'true') return {};
   const projectDir = ctx?.location?.directory || ctx?.directory || ctx?.worktree;
   if (typeof projectDir !== 'string' || !projectDir) return {};
   const script = join(projectDir, EMIT_BIN);

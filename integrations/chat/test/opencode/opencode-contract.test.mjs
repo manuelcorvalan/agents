@@ -19,6 +19,8 @@ const fixtures = loadOpencodeFixtures();
 const NOW = '2026-11-11T14:03:22.120Z';
 const EMIT_BIN = 'integrations/chat/bin/chat-emit.mjs';
 const PROMPT_SENTINEL = 'PROMPT-SENTINEL-MUST-NOT-LEAVE';
+// The plugin only loads its handlers when the bridge is explicitly enabled.
+process.env.CHAT_BRIDGE_ENABLED = 'true';
 const context = (extra = {}) => ({ identities, redaction: DEFAULT_REDACTION, now: NOW, verbosity: 'default', ...extra });
 
 const byEvent = (payloads) => Object.fromEntries(payloads.map((payload) => [payload.event, payload]));

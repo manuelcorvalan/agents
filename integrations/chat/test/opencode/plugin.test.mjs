@@ -1,9 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   ChatBridgePlugin, childSessionIDOf, chatTextOf, partTextOf, sessionInfoOf, toolEventOf,
 } from '../../opencode/plugin.js';
-import { REPO_DIR } from '../helpers/fixtures.mjs';
+
+/** Project dir with an emitter that writes a marker file when node runs it. */
+function fakeProject(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'chat-bridge-plugin-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, 'integrations', 'chat', 'bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'chat-emit.mjs'), "import { writeFileSync } from 'node:fs';\nwriteFileSync(process.env.CHAT_BRIDGE_MARKER, 'spawned');\n");
+  return { dir, marker: join(dir, 'spawned.marker') };
+}
+
+async function settle(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 test('should normalize the 1.x tool hook shape (input, output)', () => {
   const event = toolEventOf(
@@ -50,17 +66,64 @@ test('should join text parts of a chat.message output', () => {
   assert.equal(chatTextOf(undefined), '');
 });
 
-test('should load handlers without reading CHAT_BRIDGE_ENABLED (A13.1)', async () => {
-  const previous = process.env.CHAT_BRIDGE_ENABLED;
-  delete process.env.CHAT_BRIDGE_ENABLED;
+async function waitForMarker(marker, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(marker)) return true;
+    await settle(25);
+  }
+  return existsSync(marker);
+}
+
+test('should not load handlers or spawn workspace code unless CHAT_BRIDGE_ENABLED is exactly "true"', async (t) => {
+  const previousFlag = process.env.CHAT_BRIDGE_ENABLED;
+  const previousMarker = process.env.CHAT_BRIDGE_MARKER;
+  const markers = [];
   try {
-    const plugin = await ChatBridgePlugin({ directory: REPO_DIR });
+    for (const value of [undefined, '', 'false', 'TRUE', '1', ' true']) {
+      if (value === undefined) delete process.env.CHAT_BRIDGE_ENABLED;
+      else process.env.CHAT_BRIDGE_ENABLED = value;
+      const project = fakeProject(t);
+      process.env.CHAT_BRIDGE_MARKER = project.marker;
+      const plugin = await ChatBridgePlugin({ directory: project.dir });
+      assert.deepEqual(plugin, {}, `plugin must be inert for CHAT_BRIDGE_ENABLED=${JSON.stringify(value)}`);
+      // Even if a handler existed, invoke it: the vulnerable version spawns node here.
+      await plugin.event?.({ event: { type: 'session.idle', properties: { sessionID: 's1' } } });
+      await plugin['tool.execute.before']?.(
+        { tool: 'task', sessionID: 's1', id: 'c1' },
+        { args: { agent: 'qa', description: 'do work' } },
+      );
+      markers.push(project.marker);
+    }
+    await settle(500);
+    for (const marker of markers) assert.equal(existsSync(marker), false, 'workspace emitter must not run');
+  } finally {
+    if (previousFlag === undefined) delete process.env.CHAT_BRIDGE_ENABLED;
+    else process.env.CHAT_BRIDGE_ENABLED = previousFlag;
+    if (previousMarker === undefined) delete process.env.CHAT_BRIDGE_MARKER;
+    else process.env.CHAT_BRIDGE_MARKER = previousMarker;
+  }
+});
+
+test('should load handlers and spawn the emitter when CHAT_BRIDGE_ENABLED is "true"', async (t) => {
+  const previousFlag = process.env.CHAT_BRIDGE_ENABLED;
+  const previousMarker = process.env.CHAT_BRIDGE_MARKER;
+  const project = fakeProject(t);
+  process.env.CHAT_BRIDGE_ENABLED = 'true';
+  process.env.CHAT_BRIDGE_MARKER = project.marker;
+  try {
+    const plugin = await ChatBridgePlugin({ directory: project.dir });
     assert.deepEqual(
       [typeof plugin.event, typeof plugin['tool.execute.before'], plugin['chat.message'] !== undefined],
       ['function', 'function', true],
     );
+    await plugin.event({ event: { type: 'session.idle', properties: { sessionID: 's1' } } });
+    assert.equal(await waitForMarker(project.marker), true, 'enabled plugin must spawn the workspace emitter');
   } finally {
-    if (previous !== undefined) process.env.CHAT_BRIDGE_ENABLED = previous;
+    if (previousFlag === undefined) delete process.env.CHAT_BRIDGE_ENABLED;
+    else process.env.CHAT_BRIDGE_ENABLED = previousFlag;
+    if (previousMarker === undefined) delete process.env.CHAT_BRIDGE_MARKER;
+    else process.env.CHAT_BRIDGE_MARKER = previousMarker;
   }
 });
 

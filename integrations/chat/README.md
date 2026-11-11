@@ -482,7 +482,7 @@ Después **reiniciá OpenCode**. Los plugins se cargan al arrancar; no hay recar
 
 Qué hace y qué no:
 
-- **Enable:** el plugin **siempre** emite. `CHAT_BRIDGE_ENABLED`, el `.env` y `config.json` los resuelve `chat-emit.mjs`, no el plugin. OpenCode no carga `.env`; el plugin pasa `CHAT_BRIDGE_PROJECT_DIR=<proyecto>` y el emisor lee `<proyecto>/.env` como con Claude Code. Con el bridge apagado, el proceso hijo sale en milisegundos.
+- **Enable:** el plugin solo carga sus handlers si `CHAT_BRIDGE_ENABLED=true` está exportada en el proceso de OpenCode (guarda RCE: es un plugin global y no debe ejecutar código del workspace sin permiso explícito). Una vez habilitado, `chat-emit.mjs` resuelve `.env` y `config.json` de forma autoritativa; OpenCode no carga `.env`, así que el plugin pasa `CHAT_BRIDGE_PROJECT_DIR=<proyecto>` y el emisor lee `<proyecto>/.env` como con Claude Code.
 - **Proyecto:** el plugin toma `ctx.directory` y busca `integrations/chat/bin/chat-emit.mjs` ahí. Si el proyecto no contiene el bridge, es un no-op silencioso. El directorio del repo donde vive el plugin no define el proyecto.
 - **`node` en `PATH`:** el plugin lanza `node` como proceso hijo. Tiene que cumplir la versión mínima de [Requisitos](#requisitos). Si falla, el plugin ignora el error: no rompe la sesión de OpenCode.
 - **Qué publica:** `handoff` (tool `subagent` o `task`), `agent.started` (`session.created` de una sesión hija), `agent.finished` (`session.idle` o `session.error` de una sesión hija) y `gate.result` (receipts en el texto acumulado de la sesión raíz).
@@ -674,7 +674,7 @@ Revisá en este orden:
 1. **Symlink y reinicio.** `ls -l ~/.config/opencode/plugins/chat-bridge/plugin.js` tiene que resolver. Después de crear o borrar el symlink, reiniciá OpenCode.
 2. **El proyecto abierto contiene el bridge.** El plugin resuelve `<ctx.directory>/integrations/chat/bin/chat-emit.mjs`. Si el directorio de OpenCode no es un proyecto con `integrations/chat/`, no emite nada.
 3. **`node` en el `PATH` de OpenCode.** El plugin lanza `node`; probá `node -v` desde la misma shell que abre OpenCode.
-4. **El bridge está habilitado.** El plugin no mira `CHAT_BRIDGE_ENABLED`: lo resuelve `chat-emit.mjs` desde `<proyecto>/.env`, con los mismos códigos `env_*` de la tabla de arriba. Si el archivo tiene permisos incorrectos, no hay log y no se publica nada.
+4. **El bridge está habilitado en el entorno de OpenCode.** El plugin exige `CHAT_BRIDGE_ENABLED=true` exportada en el proceso (direnv/shell) antes de cargar handlers; `.env` por sí solo no habilita el plugin. Con handlers cargados, `chat-emit.mjs` resuelve la variable y `config.json` desde `<proyecto>/.env`, con los mismos códigos `env_*` de la tabla de arriba. Si el archivo tiene permisos incorrectos, no hay log y no se publica nada.
 5. **`.chat-bridge/bridge.log`.** Buscá `info payload_invalid` (payload que el mapper rechazó) o `error config_*`. `info hook_ignored` es normal: el evento no se mapea y no se registra. `info no_project_dir` solo aparece en pruebas manuales sin `CHAT_BRIDGE_PROJECT_DIR` ni `CLAUDE_PROJECT_DIR`; el plugin siempre pasa el primero.
 6. **Subagentes como `unknown`.** El mapa `sesión hija → agente` se pierde al recargar el plugin. No es un bug: reiniciá el run completo si necesitás la identidad correcta.
 
