@@ -10,6 +10,26 @@
             "timeout": 2
           }
         ]
+      },
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "graphify hook-guard search",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "graphify hook-guard read",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -41,6 +61,18 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/integrations/chat/bin/chat-emit.mjs\"",
             "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "graphify hook-guard compact",
+            "timeout": 10
           }
         ]
       }
